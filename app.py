@@ -20,20 +20,20 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Auto-Key Rotation.")
+st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
-# --- SETUP (Key Pool Logic & Reset Fix) ---
+# --- SETUP (Auto-Resetting Key Pool) ---
 try:
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",")]
     
-    # THE FIX: If the index is out of bounds for the new list, reset to 0
+    # AUTO-RESET: If the index is out of bounds for the new list, reset to 0
     if 'current_key_index' not in st.session_state or st.session_state.current_key_index >= len(KEYS_LIST):
         st.session_state.current_key_index = 0
         
     API_KEY = KEYS_LIST[st.session_state.current_key_index]
     client = genai.Client(api_key=API_KEY)
 except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets (separate with commas). Error: {e}")
+    st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}")
     st.stop()
 
 try:
@@ -46,9 +46,6 @@ except:
 USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
 TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT
-
-if 'limit_reached' not in st.session_state:
-    st.session_state.limit_reached = False
 
 def get_usage_count():
     if os.path.exists(USAGE_FILE):
@@ -123,17 +120,17 @@ with st.sidebar:
     current_usage = get_usage_count()
     remaining = max(0, TOTAL_LIMIT - current_usage)
     
-    st.markdown("### 📊 Daily Scan Limit")
-    st.progress(current_usage / TOTAL_LIMIT)
-    st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
-    st.markdown(f"**Remaining:** {remaining} scans")
-    
-    # THE NEW RESET BUTTON
-    if st.button("🔄 Reset Scan Counter"):
-        st.session_state.current_key_index = 0
-        if os.path.exists(USAGE_FILE):
-            os.remove(USAGE_FILE)
-        st.rerun()
+    # DYNAMIC LIMIT CHECK (No more stuck flags!)
+    if st.session_state.current_key_index >= len(KEYS_LIST):
+        st.error("🚫 **LIMIT REACHED**")
+        st.progress(1.0)
+        st.markdown(f"**Used:** {TOTAL_LIMIT} / {TOTAL_LIMIT}")
+        st.markdown(f"**Remaining:** 0 scans")
+        st.caption("Contact Authdev for License Activation")
+    else:
+        st.progress(current_usage / TOTAL_LIMIT)
+        st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
+        st.markdown(f"**Remaining:** {remaining} scans")
     
     st.divider()
     
@@ -142,13 +139,13 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (Automatic Key Rotation) ---
+# --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
+        # DYNAMIC LIMIT CHECK (No more stuck flags!)
         if st.session_state.current_key_index >= len(KEYS_LIST):
-            st.session_state.limit_reached = True
             st.warning("""
             ### 🚫 ALL KEYS LIMIT REACHED
             You have exhausted all loaded API keys. 
@@ -246,7 +243,6 @@ if uploaded_files:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             st.session_state.current_key_index += 1
                             if st.session_state.current_key_index >= len(KEYS_LIST):
-                                st.session_state.limit_reached = True
                                 st.warning("""
                                 ### 🚫 ALL KEYS LIMIT REACHED
                                 You have exhausted all loaded API keys. 
