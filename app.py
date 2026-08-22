@@ -22,11 +22,14 @@ st.markdown(f"""
 st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
-# --- SETUP (Auto-Resetting Key Pool) ---
+# --- SETUP (The Anti-Stuck Logic) ---
 try:
-    KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",")]
+    KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",") if k.strip()]
+    if len(KEYS_LIST) == 0:
+        st.error("❌ No keys found! Please check Settings -> Secrets.")
+        st.stop()
     
-    # AUTO-RESET: If the index is out of bounds for the new list, reset to 0
+    # ANTI-STUCK: If the index is out of bounds, reset it to 0 automatically!
     if 'current_key_index' not in st.session_state or st.session_state.current_key_index >= len(KEYS_LIST):
         st.session_state.current_key_index = 0
         
@@ -115,22 +118,20 @@ with st.sidebar:
     st.divider()
     
     total_keys = len(KEYS_LIST)
-    st.markdown(f"⚙️ **Active Keys:** {total_keys} loaded")
+    st.markdown(f"⚙️ **Active Keys Loaded:** {total_keys}")
     
     current_usage = get_usage_count()
     remaining = max(0, TOTAL_LIMIT - current_usage)
     
-    # DYNAMIC LIMIT CHECK (No more stuck flags!)
-    if st.session_state.current_key_index >= len(KEYS_LIST):
-        st.error("🚫 **LIMIT REACHED**")
-        st.progress(1.0)
-        st.markdown(f"**Used:** {TOTAL_LIMIT} / {TOTAL_LIMIT}")
-        st.markdown(f"**Remaining:** 0 scans")
-        st.caption("Contact Authdev for License Activation")
-    else:
-        st.progress(current_usage / TOTAL_LIMIT)
-        st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
-        st.markdown(f"**Remaining:** {remaining} scans")
+    st.markdown("### 📊 Daily Scan Limit")
+    st.progress(current_usage / TOTAL_LIMIT)
+    st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
+    st.markdown(f"**Remaining:** {remaining} scans")
+    
+    # Backup reset button
+    if st.button("🔄 Force Reset Session"):
+        st.session_state.clear()
+        st.rerun()
     
     st.divider()
     
@@ -139,21 +140,15 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS ---
+# --- AI ANALYSIS (Automatic Key Rotation, No Stuck Index) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
-        # DYNAMIC LIMIT CHECK (No more stuck flags!)
+        # Double-check anti-stuck logic before running
         if st.session_state.current_key_index >= len(KEYS_LIST):
-            st.warning("""
-            ### 🚫 ALL KEYS LIMIT REACHED
-            You have exhausted all loaded API keys. 
+            st.session_state.current_key_index = 0
             
-            Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
-            """)
-            st.stop()
-        
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
@@ -242,7 +237,9 @@ if uploaded_files:
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             st.session_state.current_key_index += 1
+                            # If we go out of bounds, reset to 0 and break the loop
                             if st.session_state.current_key_index >= len(KEYS_LIST):
+                                st.session_state.current_key_index = 0
                                 st.warning("""
                                 ### 🚫 ALL KEYS LIMIT REACHED
                                 You have exhausted all loaded API keys. 
