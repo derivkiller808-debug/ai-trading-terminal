@@ -7,50 +7,50 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (DARK MODE WITH TRANSPARENT BUTTON) ---
+# --- STYLING (DARK MODE WITH EMERALD GREEN & BLUE TEXT) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
     .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
     [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
     
-    /* Green Headers */
-    h1, h2, h3, h4, h5, h6 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
+    /* Emerald Green Headers */
+    h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
     
-    /* BLUE MAIN TEXT */
+    /* Blue Main Text */
     p, li, span, label, div {{ color: #00aaff !important; }}
     
     /* Inputs */
-    input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00ff88 !important; }}
+    input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00E5A0 !important; }}
     
-    /* TRANSPARENT BUTTONS - UPDATED */
+    /* Transparent Emerald Buttons */
     .stButton>button {{
-        background-color: rgba(0, 255, 136, 0.7) !important;  /* Semi-transparent */
+        background-color: rgba(0, 229, 160, 0.7) !important;
         color: #000 !important;
         font-weight: bold;
-        border: 1px solid rgba(0, 255, 136, 0.9) !important;   /* Visible border */
+        border: 1px solid rgba(0, 229, 160, 0.9) !important;
         border-radius: 5px;
         transition: all 0.2s ease;
     }}
     .stButton>button:hover {{
-        background-color: rgba(0, 255, 136, 0.85) !important;  /* More opaque on hover */
-        border-color: #00ff88 !important;
+        background-color: rgba(0, 229, 160, 0.85) !important;
+        border-color: #00E5A0 !important;
     }}
     
     /* File Uploader & Containers */
-    [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00ff88 !important; border-radius: 10px; padding: 10px; }}
-    [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #00ff88 !important; border-radius: 10px; padding: 10px; }}
+    [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00E5A0 !important; border-radius: 10px; padding: 10px; }}
+    [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #00E5A0 !important; border-radius: 10px; padding: 10px; }}
     
     /* Progress Bars */
-    .stProgress > div > div > div > div {{ background-color: #00ff88 !important; }}
+    .stProgress > div > div > div > div {{ background-color: #00E5A0 !important; }}
     
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER (DIRECT HTML INJECTION - GREEN) ---
-st.markdown("<h1 style='color: #00ff88; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
+# --- HEADER (DIRECT HTML INJECTION - EMERALD GREEN) ---
+st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
 st.markdown("<p style='color: #00aaff; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
@@ -342,11 +342,11 @@ else:
         st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
         st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
 
-# --- FOOTER (DIRECT HTML INJECTION - GREEN) ---
+# --- FOOTER (DIRECT HTML INJECTION - EMERALD GREEN) ---
 st.divider()
 st.markdown("""
-<div style="color: #00ff88; text-align: center; font-family: 'Courier New', monospace;">
-    <h3 style="color: #00ff88;">Created by Alex Nderitu</h3>
-    <p style="color: #00ff88;">Whatsapp +254759914001 for Further Assistance.</p>
+<div style="color: #00E5A0; text-align: center; font-family: 'Courier New', monospace;">
+    <h3 style="color: #00E5A0;">Created by Alex Nderitu</h3>
+    <p style="color: #00E5A0;">Whatsapp +254759914001 for Further Assistance.</p>
 </div>
 """, unsafe_allow_html=True)
