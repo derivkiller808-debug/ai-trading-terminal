@@ -78,6 +78,10 @@ def clean_analysis(text):
 # --- SYMBOLS & SESSION ---
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
+if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
+if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
+if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
+if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
 # --- PARSING ---
@@ -107,7 +111,6 @@ with st.sidebar:
     st.divider()
     
     st.markdown(f"⚙️ **Active Keys Loaded:** {len(KEYS_LIST)}")
-    
     current_usage = get_usage_count()
     remaining = max(0, TOTAL_LIMIT - current_usage)
     
@@ -116,7 +119,6 @@ with st.sidebar:
     st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
     st.markdown(f"**Remaining:** {remaining} scans")
     
-    # Master Reset Button
     if st.button("🧹 Reset Usage Counter"):
         if os.path.exists(USAGE_FILE):
             os.remove(USAGE_FILE)
@@ -134,13 +136,11 @@ if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
-        # 1. Calculate Hash
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
-        # 2. Check Supabase Cache
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -156,7 +156,6 @@ if uploaded_files:
             except:
                 pass
 
-        # 3. The "Legendary 50-Year Master Trader" Prompt
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
@@ -187,14 +186,11 @@ if uploaded_files:
         DO NOT calculate lot sizes, leverage, or margin.
         """
         
-        # 4. The Master Key Loop (Automatically finds the first working key)
         success = False
-        last_error = ""
         
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
-                # Iterate through keys WITHOUT getting stuck on index
                 for i, key in enumerate(KEYS_LIST):
                     try:
                         client = genai.Client(api_key=key)
@@ -225,26 +221,20 @@ if uploaded_files:
                             success = True
                             st.rerun()
                             break
-                        else:
-                            last_error = "AI did not return the exact numbers."
-                            break
                             
                     except Exception as e:
-                        # If 429, move to the next key!
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             continue
                         else:
-                            last_error = str(e)
                             break
                             
                 if not success:
                     st.warning("""
                     ### 🚫 ALL KEYS LIMIT REACHED
-                    All 10 keys have been exhausted. 
+                    All keys have been exhausted. 
                     
                     Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
                     """)
-                    st.info(f"Debug Info (For your eyes only): {last_error}")
                 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
@@ -256,13 +246,18 @@ if uploaded_files:
 
 st.divider()
 
-# --- AUTO-FILLING MULTI-SYMBOL CALCULATOR ---
+# --- AUTO-FILLING MULTI-SYMBOL CALCULATOR (FIXED) ---
 st.subheader("🧮 Auto-Calculating Precision Calculator")
-st.caption("Values fill automatically. You can manually override them.")
+st.caption("Values fill automatically after analysis. You can manually override them.")
 
 col1, col2 = st.columns(2)
 with col1:
-    instrument = st.selectbox("Select Instrument", symbol_options, index=0)
+    try:
+        default_index = symbol_options.index(st.session_state.auto_symbol)
+    except (ValueError, AttributeError):
+        default_index = 0
+    
+    instrument = st.selectbox("Select Instrument (Auto-filled by AI)", symbol_options, index=default_index)
     entry_input = st.text_input("Entry Price", key="entry_field")
     stop_loss_input = st.text_input("Stop Loss", key="sl_field")
     take_profit_input = st.text_input("Take Profit", key="tp_field")
