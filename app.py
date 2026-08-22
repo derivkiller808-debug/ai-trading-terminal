@@ -1,6 +1,7 @@
 import streamlit as st
 import math
 import re
+import time
 import hashlib
 from PIL import Image
 from google import genai
@@ -33,24 +34,25 @@ except Exception as e:
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
 
-# --- SESSION STATE (Prevent crashes) ---
+# --- SESSION STATE ---
 if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
 if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
 if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- PARSING ---
+# --- PARSING (Made more robust) ---
 def parse_ai_response(text):
+    # Try to find any number format, allowing "Entry:", "Entry Price:", etc.
     symbol_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction:\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
-    entry_match = re.search(r"Entry:\s*([\d.]+)", text, re.IGNORECASE)
-    sl_match = re.search(r"Stop Loss:\s*([\d.]+)", text, re.IGNORECASE)
-    tp_match = re.search(r"Take Profit:\s*([\d.]+)", text, re.IGNORECASE)
+    entry_match = re.search(r"Entry(?:\s*Price)?:\s*([\d.]+)", text, re.IGNORECASE)
+    sl_match = re.search(r"Stop(?:\s*Loss)?:\s*([\d.]+)", text, re.IGNORECASE)
+    tp_match = re.search(r"Take(?:\s*Profit)?:\s*([\d.]+)", text, re.IGNORECASE)
     
     if entry_match and sl_match and tp_match:
         sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
-        if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
+        if sym in ["XAUUSD", "GOLD", "XAU"]: sym = "XAUUSD (Gold)"
         elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
@@ -68,7 +70,7 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (Ensemble & Permanent Memory) ---
+# --- AI ANALYSIS (With Visible Errors & Fallback Models) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
@@ -96,23 +98,26 @@ if uploaded_files:
         You are a top-tier, brilliant technical analyst. I am uploading exactly three charts: 4H, 30M, and 5M.
         Analyze the MACRO TREND on 4H. Find the PRICE ACTION PATTERN on 30M. THEN declare BUY or SELL.
         If neutral, say NEUTRAL.
-        STRICTLY output in this exact format (with no extra text):
-        Symbol: XAUUSD (or BTCUSD or EURUSD)
+        
+        **STRICT OUTPUT FORMAT** (Output EXACTLY these 5 lines, no extra text):
+        Symbol: XAUUSD
         Direction: SELL
         Entry: 2450.50
         Stop Loss: 2460.00
         Take Profit: 2400.00
+        
         DO NOT calculate lot sizes, leverage, or margin.
         """
         
         try:
             images = [Image.open(file) for file in uploaded_files]
-            # Using 3.6-flash (the working model) three times for the voting mechanism
-            models = ["gemini-3.6-flash", "gemini-3.6-flash", "gemini-3.6-flash"]
+            # Using 3 different models to prevent hitting the exact same rate limit!
+            models = ["gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
             votes = []
             valid_results = []
+            raw_texts = []
             
-            with st.spinner("Running 3-AI Consensus & Saving to Database..."):
+            with st.spinner("Running 3-AI Consensus..."):
                 for model_name in models:
                     try:
                         chat = client.chats.create(model=model_name)
@@ -120,12 +125,28 @@ if uploaded_files:
                             message=[system_prompt, *images],
                             config=genai.types.GenerateContentConfig(temperature=0.0)
                         )
+                        raw_texts.append(f"**{model_name}:**\n{response.text}\n")
                         parsed = parse_ai_response(response.text)
                         if parsed:
                             votes.append(parsed['direction'])
                             valid_results.append(parsed)
-                    except:
-                        continue
+                        else:
+                            st.warning(f"⚠️ {model_name} responded but couldn't find the exact numbers. Check format below.")
+                            
+                        # Wait 2 seconds between calls to avoid free-tier rate limits
+                        time.sleep(2)
+                        
+                    except Exception as e:
+                        # *CRITICAL*: No more silent failures! This will show you exactly what went wrong.
+                        st.warning(f"❌ {model_name} failed to respond: {e}")
+                        time.sleep(2)
+
+            # If all 3 models failed, show the raw texts so we know what's happening
+            if not valid_results:
+                st.error("**CRITICAL ERROR:** Zero AI models returned parseable data. Showing raw responses below so we can fix the prompt:")
+                for txt in raw_texts:
+                    st.code(txt)
+                st.stop()
 
             buy_count = votes.count("BUY"); sell_count = votes.count("SELL"); neutral_count = votes.count("NEUTRAL")
             final_direction = "NEUTRAL"
@@ -158,7 +179,7 @@ if uploaded_files:
             st.rerun()
             
         except Exception as e:
-            st.error(f"AI Error: {e}")
+            st.error(f"Major AI Error: {e}")
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
