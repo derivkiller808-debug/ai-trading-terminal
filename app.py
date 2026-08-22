@@ -57,7 +57,7 @@ if uploaded_files:
             
             with st.spinner("Analyzing charts and calculating probabilities..."):
                 # UPDATED: Use Chat.send_message to suppress the warning
-                chat = client.chats.create(model="gemini-2.0-flash")
+                chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message([system_prompt, *images])
                 
             st.success("Analysis Complete:")
