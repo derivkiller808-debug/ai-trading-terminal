@@ -56,11 +56,9 @@ if uploaded_files:
             images = [Image.open(file) for file in uploaded_files]
             
             with st.spinner("Analyzing charts and calculating probabilities..."):
-                # NEW API SYNTAX FOR GOOGLE.GENAI
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash", 
-                    contents=[system_prompt, *images]
-                )
+                # UPDATED: Use Chat.send_message to suppress the warning
+                chat = client.chats.create(model="gemini-2.0-flash")
+                response = chat.send_message([system_prompt, *images])
                 
             st.success("Analysis Complete:")
             st.markdown(response.text)
