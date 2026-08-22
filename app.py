@@ -87,7 +87,7 @@ if uploaded_files:
             
             with st.spinner("Analyzing charts..."):
                 # Using the guaranteed available model
-                chat = client.chats.create(model="gemini-2.5-flash")
+                chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message(
                     message=[system_prompt, *images],
                     config=genai.types.GenerateContentConfig(temperature=0.0)
