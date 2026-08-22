@@ -149,7 +149,6 @@ if uploaded_files:
             except:
                 pass
 
-        # ===== THE "CONDITIONAL SPECULATION" PROMPT =====
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -168,14 +167,17 @@ if uploaded_files:
         **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
         
         **IF YOU SAY NEUTRAL:**
-        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict. In this section, describe the exact price action trigger required for a future trade. For example: "If 5M price sweeps 77,300 and leaves a wick rejection, then buy at 77,350 with SL at 77,000 and TP at 78,200." You MUST still fill in the labels below with these specific conditional numbers.
+        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict. 
+        In this section, describe the exact price action trigger required for a future trade in plain English ONLY. 
+        For example: "If 5M price sweeps 77,300 and leaves a wick rejection, then look for a buy entry near 77,350 with a stop loss near 77,000 and a take profit near 78,200."
+        **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels. The specific numbers are for the analyst to read, not for the calculator to use.
 
         **End your response with exactly these labels on new lines (no extra text after them):**
         Symbol:
         Direction: (BUY, SELL, or NEUTRAL)
-        Entry: (This is the CONDITIONAL trigger price)
-        Stop Loss: (This is the CONDITIONAL stop loss)
-        Take Profit: (This is the CONDITIONAL take profit)
+        Entry: (Leave blank if NEUTRAL)
+        Stop Loss: (Leave blank if NEUTRAL)
+        Take Profit: (Leave blank if NEUTRAL)
 
         DO NOT calculate lot sizes, leverage, or margin.
         """
@@ -183,13 +185,11 @@ if uploaded_files:
         success = False
         votes = []
         results = []
-        error_messages = []
         raw_texts = []
 
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Running 3-Vote Accuracy Consensus..."):
-                # Run 3 checks using different keys
                 for i in range(3):
                     try:
                         key = KEYS_LIST[i]
@@ -206,26 +206,20 @@ if uploaded_files:
                             results.append(parsed)
                             votes.append(parsed['direction'])
                             increment_usage()
-                        else:
-                            error_messages.append(f"AI {i+1} didn't follow strict format.")
-                            
                     except Exception as e:
-                        if "429" in str(e):
-                            error_messages.append(f"Key {i+1} Limit hit, skipping.")
+                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             continue
                         else:
-                            error_messages.append(f"Key {i+1} Error: {str(e)[:50]}")
+                            continue
 
                 # THE VOTING LOGIC
                 buy_votes = votes.count("BUY")
                 sell_votes = votes.count("SELL")
-                neutral_votes = votes.count("NEUTRAL")
-
                 final_direction = "NEUTRAL"
                 if buy_votes >= 2: final_direction = "BUY"
                 elif sell_votes >= 2: final_direction = "SELL"
 
-                # CASE 1: CLEAR TRADE (2 or 3 AIs agree on BUY/SELL)
+                # CASE 1: CLEAR TRADE
                 if final_direction != "NEUTRAL":
                     winning_results = [r for r in results if r['direction'] == final_direction]
                     avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
@@ -249,12 +243,10 @@ if uploaded_files:
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
                     
-                # CASE 2: NEUTRAL - PROVIDE SPECULATIVE ANALYSIS
+                # CASE 2: NEUTRAL - PROVIDE SPECULATIVE ANALYSIS (NO TRIGGER LEVELS)
                 else:
-                    # Show the text from the first successful AI
                     if raw_texts:
                         st.session_state.analysis_result = clean_analysis(raw_texts[0])
-                        spec_levels = results[0] if results else None
                         
                         st.warning("### 🛑 NO ACTIVE TRADE - Speculative Setup Only")
                         st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **speculative setup** below. Wait for these conditions to be met before considering a trade.")
@@ -262,24 +254,10 @@ if uploaded_files:
                         with st.container(border=True):
                             st.markdown(st.session_state.analysis_result)
                         
-                        if spec_levels:
-                            st.markdown(f"""
-**🚨 Speculative Trigger Levels:**
-- **Symbol:** {spec_levels['symbol']}
-- **Trigger Direction:** {spec_levels['direction']}
-- **Trigger Entry:** {spec_levels['entry']}
-- **Trigger Stop Loss:** {spec_levels['sl']}
-- **Trigger Take Profit:** {spec_levels['tp']}
-""")
-                            st.info("These are NOT active trades. Only enter if the market reaches the entry level and confirms the direction. You can manually type these into the calculator below when triggered.")
+                        st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.")
                     else:
                         st.warning("### 🛑 NO TRADE - No Speculative Analysis Available")
                         st.warning("The AI could not even generate a speculative setup. It is safer to skip this chart entirely.")
-                    
-                    st.divider()
-                    st.subheader("🔍 Diagnostics (For debugging)")
-                    for msg in error_messages:
-                        st.write(msg)
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
