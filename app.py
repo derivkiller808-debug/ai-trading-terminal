@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (DARK MODE WITH EMERALD GREEN & BLUE TEXT) ---
+# --- STYLING (DARK MODE, EMERALD GREEN, 0.4 TRANSPARENCY) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -23,17 +23,17 @@ st.markdown(f"""
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00E5A0 !important; }}
     
-    /* Transparent Emerald Buttons */
+    /* Buttons (0.4 Opacity, 0.6 on Hover) */
     .stButton>button {{
-        background-color: rgba(0, 229, 160, 0.7) !important;
+        background-color: rgba(0, 229, 160, 0.4) !important;  /* Set to 0.4 */
         color: #000 !important;
         font-weight: bold;
-        border: 1px solid rgba(0, 229, 160, 0.9) !important;
+        border: 1px solid rgba(0, 229, 160, 0.8) !important;
         border-radius: 5px;
         transition: all 0.2s ease;
     }}
     .stButton>button:hover {{
-        background-color: rgba(0, 229, 160, 0.85) !important;
+        background-color: rgba(0, 229, 160, 0.6) !important;  /* Set to 0.6 on hover */
         border-color: #00E5A0 !important;
     }}
     
