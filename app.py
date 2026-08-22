@@ -1,8 +1,8 @@
 import streamlit as st
 import math
 import re
+import os
 import hashlib
-from datetime import date
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
@@ -21,7 +21,7 @@ st.markdown(f"""
 st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
-# --- API SETUP ---
+# --- SETUP ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
@@ -29,53 +29,32 @@ except Exception as e:
     st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
     st.stop()
 
-# --- SUPABASE SETUP (For usage tracking) ---
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
 except:
     supabase_connected = False
 
-# --- DAILY LIMIT CONSTANT ---
+# --- USAGE COUNTER LOGIC ---
+USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
 
-# --- FUNCTION TO GET TODAY'S USAGE ---
-def get_usage():
-    if not supabase_connected:
-        # Fallback to session state if DB fails
-        if 'scans_today' not in st.session_state:
-            st.session_state.scans_today = 0
-        return st.session_state.scans_today
-    
-    try:
-        today = str(date.today())
-        response = supabase.table('daily_usage').select('scan_count').eq('scan_date', today).execute()
-        if response.data:
-            return response.data[0]['scan_count']
-        else:
-            # Insert row if not exists
-            supabase.table('daily_usage').insert({'scan_date': today, 'scan_count': 0}).execute()
-            return 0
-    except:
-        return 0
+def get_usage_count():
+    if os.path.exists(USAGE_FILE):
+        with open(USAGE_FILE, "r") as f:
+            try:
+                return int(f.read().strip())
+            except:
+                return 0
+    return 0
 
-# --- FUNCTION TO INCREMENT USAGE ---
 def increment_usage():
-    if not supabase_connected:
-        st.session_state.scans_today += 1
-        return
-    
-    try:
-        today = str(date.today())
-        # Upsert to increment
-        current = get_usage()
-        supabase.table('daily_usage').upsert(
-            {'scan_date': today, 'scan_count': current + 1}
-        ).execute()
-    except:
-        pass
+    count = get_usage_count()
+    with open(USAGE_FILE, "w") as f:
+        f.write(str(count + 1))
+    return count + 1
 
-# --- SYMBOLS LIST ---
+# --- SYMBOLS ---
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
 
@@ -109,41 +88,46 @@ with st.sidebar:
     account_balance = st.number_input("Account Balance ($)", min_value=1.0, value=1000.0, step=10.0)
     leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
     risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
+    
     st.divider()
+    
+    # --- NEW: The Usage Meter ---
+    current_usage = get_usage_count()
+    remaining = max(0, DAILY_LIMIT - current_usage)
+    st.markdown("### 📊 Daily Scan Limit")
+    st.progress(current_usage / DAILY_LIMIT)
+    st.markdown(f"**Used:** {current_usage} / {DAILY_LIMIT}")
+    st.markdown(f"**Remaining:** {remaining} scans")
+    
+    st.divider()
+    
+    st.subheader("📈 Upload Charts")
     uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-
-st.divider()
-
-# --- USAGE DISPLAY (Progress Bar) ---
-current_usage = get_usage()
-remaining = max(0, DAILY_LIMIT - current_usage)
-
-st.subheader("📊 Daily Scan Limit")
-st.progress(min(current_usage / DAILY_LIMIT, 1.0), text=f"Used: {current_usage} / {DAILY_LIMIT} charts")
-if remaining > 0:
-    st.caption(f"You have **{remaining}** scans left today.")
-else:
-    st.caption("You have reached your daily limit.")
 
 st.divider()
 
 # --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
-    
-    # If limit reached, show message
-    if current_usage >= DAILY_LIMIT:
-        st.error("You have reached your daily scan limit of 20 charts. Contact authdev Alex Nderitu via Whatsapp +254759914001 for License Activation")
-        st.stop()
-    
     if st.button("Run Top-Trader Analysis"):
-        # 1. Calculate Hash
+        
+        # 1. Check Daily Limit
+        if get_usage_count() >= DAILY_LIMIT:
+            st.warning("""
+            ### 🚫 Daily Limit Reached
+            You have reached your daily scan limit of 20 charts. 
+            
+            Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
+            """)
+            st.stop()
+        
+        # 2. Calculate Hash
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
-        # 2. Check Supabase (Permanent Memory)
+        # 3. Check Supabase Cache
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -159,7 +143,7 @@ if uploaded_files:
             except:
                 pass
 
-        # 3. The "Legendary 50-Year Master Trader" Prompt
+        # 4. The "Legendary 50-Year Master Trader" Prompt
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
@@ -191,9 +175,6 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
-                # Increment usage BEFORE calling API
-                increment_usage()
-                
                 chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message(
                     message=[system_prompt, *images],
@@ -203,13 +184,16 @@ if uploaded_files:
                 parsed_data = parse_ai_response(response.text)
                 
                 if parsed_data:
+                    # Increment the usage count ONLY on success
+                    increment_usage()
+                    
                     st.session_state.analysis_result = response.text
                     st.session_state.auto_symbol = parsed_data['symbol']
                     st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
                     st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
                     st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    # Save to Supabase (Permanent Memory)
+                    # Save to Supabase
                     if supabase_connected:
                         try:
                             cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
@@ -223,7 +207,16 @@ if uploaded_files:
                     st.error("❌ AI did not return the exact numbers. Check the output format.")
                 
         except Exception as e:
-            st.error(f"❌ AI Error: {e}")
+            # THE CUSTOM ERROR MESSAGE FOR 429 / QUOTA LIMIT
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                st.warning("""
+                ### 🚫 Daily Limit Reached
+                You have reached your daily scan limit of 20 charts. 
+                
+                Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
+                """)
+            else:
+                st.error(f"❌ AI Error: {e}")
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
