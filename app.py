@@ -1,10 +1,8 @@
 import streamlit as st
 import math
 import re
-import hashlib
 from PIL import Image
 from google import genai
-from supabase import create_client, Client
 
 # --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
@@ -18,15 +16,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Triple AI Consensus & Permanent Cloud Memory (Supabase)")
+st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk.")
 
-# --- API & DATABASE SETUP ---
+# --- API SETUP ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", "PASTE_YOUR_KEY_HERE")
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://your-project.supabase.co")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "your_anon_public_key")
-
 client = genai.Client(api_key=API_KEY)
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- SYMBOLS LIST ---
 placeholder = "Select Instrument..."
@@ -67,32 +61,10 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (Ensemble & Permanent Cloud Cache) ---
+# --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
-        # 1. Calculate Hash
-        hasher = hashlib.sha256()
-        for file in uploaded_files:
-            hasher.update(file.getvalue())
-        image_hash = hasher.hexdigest()
-
-        # 2. Query Supabase First!
-        try:
-            response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
-            if response.data:
-                cached = response.data[0]['result']
-                st.session_state.analysis_result = cached['text']
-                st.session_state.auto_symbol = cached['symbol']
-                st.session_state.entry_field = cached['entry']
-                st.session_state.sl_field = cached['sl']
-                st.session_state.tp_field = cached['tp']
-                st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
-                st.rerun()
-        except Exception as db_error:
-            st.warning(f"Database connection issue: {db_error}, falling back to RAM.")
-
-        # 3. Run Ensemble Analysis
         system_prompt = """
         You are a top-tier, brilliant technical analyst. I am uploading exactly three charts: 4H, 30M, and 5M.
         Analyze the MACRO TREND on 4H. Find the PRICE ACTION PATTERN on 30M. THEN declare BUY or SELL.
@@ -112,7 +84,7 @@ if uploaded_files:
             votes = []
             valid_results = []
             
-            with st.spinner("Running 3-AI Consensus & Saving to Database..."):
+            with st.spinner("Running 3-AI Consensus..."):
                 for model_name in models:
                     try:
                         chat = client.chats.create(model=model_name)
@@ -132,28 +104,25 @@ if uploaded_files:
             winning_results = [r for r in valid_results if r['direction'] == final_direction]
             if final_direction == "NEUTRAL" or not winning_results:
                 final_text = f"**AI Consensus:** {neutral_count} Neutral, {buy_count} Buy, {sell_count} Sell.\n**Action: NEUTRAL / NO TRADE.**"
-                cache_data = {'text': final_text, 'symbol': placeholder, 'entry': "", 'sl': "", 'tp': ""}
+                st.session_state.analysis_result = final_text
+                # Set to placeholder
+                st.session_state.auto_symbol = placeholder
+                st.session_state.entry_field = ""
+                st.session_state.sl_field = ""
+                st.session_state.tp_field = ""
             else:
                 avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
                 avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
                 avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
                 sym = winning_results[0]['symbol']
                 final_text = f"**AI Consensus (Majority Vote {final_direction})**\n\nSymbol: {sym}\nDirection: {final_direction}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
-                cache_data = {'text': final_text, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
-
-            # 4. Save to Supabase (Permanent Memory)
-            try:
-                supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-            except Exception as e:
-                st.warning(f"Could not save to permanent database: {e}")
-
-            # Apply to UI
-            st.session_state.analysis_result = cache_data['text']
-            st.session_state.auto_symbol = cache_data['symbol']
-            st.session_state.entry_field = cache_data['entry']
-            st.session_state.sl_field = cache_data['sl']
-            st.session_state.tp_field = cache_data['tp']
-            st.success("✅ Consensus Complete and Locked permanently.")
+                
+                st.session_state.analysis_result = final_text
+                st.session_state.auto_symbol = sym
+                st.session_state.entry_field = f"{avg_entry:.2f}"
+                st.session_state.sl_field = f"{avg_sl:.2f}"
+                st.session_state.tp_field = f"{avg_tp:.2f}"
+            
             st.rerun()
             
         except Exception as e:
