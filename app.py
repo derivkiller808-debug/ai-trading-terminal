@@ -1,8 +1,10 @@
 import streamlit as st
 import math
 import re
+import hashlib
 from PIL import Image
 from google import genai
+from supabase import create_client, Client
 
 # --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
@@ -16,28 +18,29 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk.")
+st.caption("Triple AI Consensus & Permanent Cloud Memory. Upload 4H, 30M, 5M.")
 
-# --- API SETUP ---
+# --- SETUP ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
+    supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"❌ CRITICAL ERROR: Missing or incorrect GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
+    st.error(f"Missing Secrets: {e}")
     st.stop()
 
 # --- SYMBOLS LIST ---
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
 
-# --- SESSION STATE ---
+# --- SESSION STATE (Prevent crashes) ---
 if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
 if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
 if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- PARSING FUNCTION ---
+# --- PARSING ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction:\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -61,19 +64,39 @@ with st.sidebar:
     leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
     risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
     st.divider()
-    uploaded_files = st.file_uploader("Upload 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
 st.divider()
 
-# --- AI ANALYSIS (SINGLE MODEL - BULLETPROOF) ---
+# --- AI ANALYSIS (Ensemble & Permanent Memory) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
+        hasher = hashlib.sha256()
+        for file in uploaded_files:
+            hasher.update(file.getvalue())
+        image_hash = hasher.hexdigest()
+
+        # Check Supabase first
+        try:
+            response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
+            if response.data:
+                cached = response.data[0]['result']
+                st.session_state.analysis_result = cached['text']
+                st.session_state.auto_symbol = cached['symbol']
+                st.session_state.entry_field = cached['entry']
+                st.session_state.sl_field = cached['sl']
+                st.session_state.tp_field = cached['tp']
+                st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
+                st.rerun()
+        except Exception:
+            pass
+
         system_prompt = """
         You are a top-tier, brilliant technical analyst. I am uploading exactly three charts: 4H, 30M, and 5M.
         Analyze the MACRO TREND on 4H. Find the PRICE ACTION PATTERN on 30M. THEN declare BUY or SELL.
         If neutral, say NEUTRAL.
-        STRICTLY output in this format:
+        STRICTLY output in this exact format (with no extra text):
         Symbol: XAUUSD (or BTCUSD or EURUSD)
         Direction: SELL
         Entry: 2450.50
@@ -84,35 +107,58 @@ if uploaded_files:
         
         try:
             images = [Image.open(file) for file in uploaded_files]
+            # Using 3.6-flash (the working model) three times for the voting mechanism
+            models = ["gemini-3.6-flash", "gemini-3.6-flash", "gemini-3.6-flash"]
+            votes = []
+            valid_results = []
             
-            with st.spinner("Analyzing charts..."):
-                # Using the guaranteed available model
-                chat = client.chats.create(model="gemini-3.6-flash")
-                response = chat.send_message(
-                    message=[system_prompt, *images],
-                    config=genai.types.GenerateContentConfig(temperature=0.0)
-                )
-                
-                parsed_data = parse_ai_response(response.text)
-                
-                if parsed_data:
-                    # Auto-Fill
-                    st.session_state.analysis_result = response.text
-                    st.session_state.auto_symbol = parsed_data['symbol']
-                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
-                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
-                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
-                    st.success("✅ Analysis Complete!")
-                else:
-                    st.session_state.analysis_result = f"AI did not return numbers in the required format. Raw text: {response.text}"
-                    st.warning("Could not parse exact numbers. Check AI output format.")
-                
-                st.rerun()
-                
+            with st.spinner("Running 3-AI Consensus & Saving to Database..."):
+                for model_name in models:
+                    try:
+                        chat = client.chats.create(model=model_name)
+                        response = chat.send_message(
+                            message=[system_prompt, *images],
+                            config=genai.types.GenerateContentConfig(temperature=0.0)
+                        )
+                        parsed = parse_ai_response(response.text)
+                        if parsed:
+                            votes.append(parsed['direction'])
+                            valid_results.append(parsed)
+                    except:
+                        continue
+
+            buy_count = votes.count("BUY"); sell_count = votes.count("SELL"); neutral_count = votes.count("NEUTRAL")
+            final_direction = "NEUTRAL"
+            if buy_count > sell_count and buy_count >= 2: final_direction = "BUY"
+            elif sell_count > buy_count and sell_count >= 2: final_direction = "SELL"
+            
+            winning_results = [r for r in valid_results if r['direction'] == final_direction]
+            if final_direction == "NEUTRAL" or not winning_results:
+                final_text = f"**AI Consensus:** {neutral_count} Neutral, {buy_count} Buy, {sell_count} Sell.\n**Action: NEUTRAL / NO TRADE.**"
+                cache_data = {'text': final_text, 'symbol': placeholder, 'entry': "", 'sl': "", 'tp': ""}
+            else:
+                avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
+                avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
+                avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
+                sym = winning_results[0]['symbol']
+                final_text = f"**AI Consensus (Majority Vote {final_direction})**\n\nSymbol: {sym}\nDirection: {final_direction}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
+                cache_data = {'text': final_text, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
+
+            try:
+                supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+            except:
+                pass
+
+            st.session_state.analysis_result = cache_data['text']
+            st.session_state.auto_symbol = cache_data['symbol']
+            st.session_state.entry_field = cache_data['entry']
+            st.session_state.sl_field = cache_data['sl']
+            st.session_state.tp_field = cache_data['tp']
+            st.success("✅ Consensus Complete and Locked permanently.")
+            st.rerun()
+            
         except Exception as e:
-            # This will print the EXACT error to the screen
-            st.error(f"❌ AI Error: {e}")
-            st.error("If this says '404' or 'Model not found', change 'gemini-2.5-flash' to another model in the code.")
+            st.error(f"AI Error: {e}")
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
