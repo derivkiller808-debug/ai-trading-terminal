@@ -151,7 +151,7 @@ if uploaded_files:
                     # --- FALL BACK TO GROQ (Free & Unlimited) ---
                     st.info("Groq Scanning...")
                     
-                    # Convert images to Base64 for Groq (FIXED for RGBA/PNG)
+                    # Convert images to Base64 for Groq
                     base64_images = []
                     for img in images:
                         # Convert to RGB to drop the transparency channel
@@ -167,7 +167,7 @@ if uploaded_files:
                         groq_content.append({"type": "image_url", "image_url": {"url": b64}})
                     
                     groq_response = groq_client.chat.completions.create(
-                        model="llama-3.2-90b-vision-preview",
+                        model="llama-3.2-11b-vision-preview",  # UPDATED MODEL
                         messages=[{"role": "user", "content": groq_content}],
                         temperature=0.0
                     )
