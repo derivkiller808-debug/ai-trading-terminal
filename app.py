@@ -22,7 +22,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 Brilliant Trader's Terminal")
-st.caption("Built for Multi-Symbol Trading. Created by Alex Nderitu")
+st.caption("5-Column Pro Layout | Multi-Symbol | Created by Alex Nderitu")
 
 # --- API KEY ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", "PASTE_YOUR_KEY_HERE")
@@ -30,13 +30,13 @@ client = genai.Client(api_key=API_KEY)
 
 # --- SIDEBAR (Global Account Settings) ---
 with st.sidebar:
-    st.header("⚙️ Account Settings")
-    account_balance = st.number_input("Account Balance ($)", min_value=1.0, value=1000.0, step=10.0)
-    leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
-    risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
+    st.header("⚙️ Account")
+    account_balance = st.number_input("Balance ($)", min_value=1.0, value=1000.0, step=10.0)
+    leverage = st.number_input("Leverage", min_value=1.0, value=400.0, step=10.0)
+    risk_percent = st.slider("Risk %", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
 
-# --- 4 COLUMN LAYOUT (All in one row) ---
-col_upload, col_ai, col_inputs, col_outputs = st.columns([1, 2, 1.5, 1.5])
+# --- 5 COLUMN LAYOUT (Widened AI Column to prevent vertical stretch) ---
+col_upload, col_ai, col_input1, col_input2, col_output = st.columns([1, 3.5, 1.5, 1.5, 1.5])
 
 # --- COLUMN 1: UPLOAD CHARTS ---
 with col_upload:
@@ -77,18 +77,20 @@ with col_upload:
             except Exception as e:
                 st.error(f"AI Error: {e}")
 
-# --- COLUMN 2: AI ANALYSIS OUTPUT ---
+# --- COLUMN 2: AI ANALYSIS (Widest column) ---
 with col_ai:
     st.subheader("2. AI Analysis")
     if 'analysis_result' in st.session_state:
-        st.success("Analysis Complete:")
-        st.markdown(st.session_state['analysis_result'])
+        # Using a container to keep it flat
+        with st.container():
+            st.success("Analysis Complete:")
+            st.markdown(st.session_state['analysis_result'])
     else:
-        st.info("Upload charts on the left and click Run to see the analysis here.")
+        st.info("Upload charts on the left, click Run, and the analysis will appear here.")
 
-# --- COLUMN 3: INPUTS ---
-with col_inputs:
-    st.subheader("3. Inputs")
+# --- COLUMN 3: INPUTS PART 1 (Symbol, Entry, SL) ---
+with col_input1:
+    st.subheader("3. Setup")
     
     symbol = st.selectbox(
         "Symbol", 
@@ -101,20 +103,32 @@ with col_inputs:
     
     st.caption(f"Contract: {contract_size:.0f} units/lot")
     
-    entry_price = st.number_input("Entry", value=76969.00, step=10.0)
+    entry_price = st.number_input("Entry Price", value=76969.00, step=10.0)
     stop_loss = st.number_input("Stop Loss", value=77180.00, step=10.0)
+
+# --- COLUMN 4: INPUTS PART 2 (TP, R:R) ---
+with col_input2:
+    st.subheader("4. Target")
+    
     take_profit = st.number_input("Take Profit", value=76570.00, step=10.0)
     
+    # Show calculated RR based on inputs
+    price_diff = abs(entry_price - stop_loss)
+    tp_diff = abs(take_profit - entry_price)
+    if price_diff > 0:
+        current_rr = tp_diff / price_diff
+        st.metric("Current R:R", f"1 : {current_rr:.2f}")
+    
+    # Calculate Button placed here to keep things fluid
     calc_btn = st.button("Calculate Lot", use_container_width=True)
 
-# --- COLUMN 4: OUTPUTS (RESULTS) ---
-with col_outputs:
-    st.subheader("4. Results")
+# --- COLUMN 5: OUTPUTS (RESULTS) ---
+with col_output:
+    st.subheader("5. Results")
     
     if calc_btn:
         # Calculate Risk Amount
         risk_amount = account_balance * (risk_percent / 100)
-        # Calculate Price Difference
         price_diff = abs(entry_price - stop_loss)
         
         # Calculate Raw Units and Lot
@@ -123,29 +137,24 @@ with col_outputs:
         # Floor to nearest 0.01
         lot_size = math.floor(raw_lot * 100) / 100
         
-        # Calculate Margin Required for that lot
+        # Calculate Margin Required
         margin_required = (lot_size * contract_size * entry_price) / leverage
         
-        # Display results
         st.write(f"**Risk Amount:** ${risk_amount:,.2f}")
-        st.write(f"**Leverage:** {leverage:.0f}x")
         st.write(f"**Margin Req:** ${margin_required:,.2f}")
         st.divider()
         
         if lot_size < 0.01:
-            st.error(f"🚨 Risk is too small for 0.01 min lot. Tighten SL or increase Risk%.")
+            st.error("🚨 Too small for 0.01 lot.")
         elif margin_required > account_balance:
-            st.error(f"🚨 IMPOSSIBLE: {lot_size:.2f} lots needs ${margin_required:,.2f} margin. Balance is ${account_balance:,.2f}.")
+            st.error(f"🚨 IMPOSSIBLE! {lot_size:.2f} lots needs ${margin_required:,.2f} margin.")
         else:
-            st.success(f"✅ Trade: **{lot_size:.2f} Lots**")
-            # Potential Profit
+            st.success(f"**{lot_size:.2f} Lots**")
             potential_profit = abs(take_profit - entry_price) * (lot_size * contract_size)
-            rr_ratio = (abs(take_profit - entry_price)) / price_diff
             st.write(f"🎯 Profit: **${potential_profit:,.2f}**")
-            st.write(f"📈 R:R: **1 : {rr_ratio:.2f}**")
-            st.warning("Never risk >1-2%!")
+            st.warning("Risk Max 1-2%!")
     else:
-        st.caption("Click 'Calculate Lot' to see the exact safe position size here.")
+        st.caption("Click 'Calculate Lot' for the safe size.")
 
 st.divider()
 st.markdown("### **Created by Alex Nderitu**")
