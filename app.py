@@ -25,7 +25,7 @@ try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEY. Error: {e}")
+    st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
     st.stop()
 
 # Try to set up Supabase, but if it fails, the app still works!
@@ -78,12 +78,13 @@ st.divider()
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
+        # 1. Calculate Hash
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
-        # Check Supabase (Permanent Memory)
+        # 2. Check Supabase (Permanent Memory) - Only if connected
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -97,33 +98,33 @@ if uploaded_files:
                     st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
                     st.rerun()
             except:
-                pass
+                pass # If DB fails, fall back to AI
 
-        # --- THE FULL PER-TIMEFRAME REPORT PROMPT (THE ONE YOU WANT) ---
+        # 3. The FULL Per-Timeframe Report Prompt
         system_prompt = """
-        You are a top-tier, brilliant technical analyst with 20 years of experience analyzing crypto charts using Multi-Timeframe Confluence.
-        
+        You are a top-tier, brilliant technical analyst with 20 years of experience. You analyze crypto charts using Multi-Timeframe Confluence.
+
         I am uploading exactly three screenshots: 4H, 30M, and 5M.
-        
+
         **STEP 1: FULL PER-TIMEFRAME ANALYSIS REPORT**
         Give me a detailed breakdown of *each* timeframe:
-        
+
         - **4H Trend Analysis:** What is the macro bias? Are we in an uptrend, downtrend, or range? Is there a major support or resistance level (e.g., the red line)?
         - **30M Pattern Analysis:** What price action pattern is forming (e.g., double top, bull flag, head and shoulders, break of structure)?
         - **5M Sniper Entry:** What is the immediate liquidity, order block, or rejection wick that confirms the entry point?
-        
+
         **STEP 2: FINAL VERDICT**
         State clearly whether I should BUY, SELL, or stay NEUTRAL, and explain why in 1-2 sentences based on the above analysis.
-        
+
         **STEP 3: STRICT TRADE DATA FORMAT**
         At the *very end* of your response, output these exact 5 lines (and ONLY these 5 lines at the end) so my calculator can parse them:
-        
+
         Symbol: XAUUSD (or BTCUSD or EURUSD)
         Direction: SELL
         Entry: 2450.50
         Stop Loss: 2460.00
         Take Profit: 2400.00
-        
+
         DO NOT calculate lot sizes, leverage, or margin.
         """
         
@@ -131,7 +132,6 @@ if uploaded_files:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
                 chat = client.chats.create(model="gemini-3.6-flash")
-                # IMPORTANT FIX: Use 'message=' not 'contents=' or plain lists!
                 response = chat.send_message(
                     message=[system_prompt, *images],
                     config=genai.types.GenerateContentConfig(temperature=0.0)
@@ -146,7 +146,7 @@ if uploaded_files:
                     st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
                     st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    # Save to Supabase
+                    # Save to Supabase (Permanent Memory) - Only if connected
                     if supabase_connected:
                         try:
                             cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
