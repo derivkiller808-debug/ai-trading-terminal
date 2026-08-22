@@ -1,10 +1,13 @@
 import streamlit as st
 import math
 import re
+import base64
 import hashlib
+from io import BytesIO
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
+from groq import Groq
 
 # --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
@@ -18,14 +21,15 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
+st.caption("Dual AI Engine (Gemini & Groq). Auto-fallback to prevent quota limits.")
 
 # --- API SETUP (Graceful) ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
+    groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
+    st.error(f"❌ Missing API Keys in Settings -> Secrets. Error: {e}")
     st.stop()
 
 # Try to set up Supabase, but if it fails, the app still works!
@@ -84,7 +88,7 @@ if uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
-        # 2. Check Supabase (Permanent Memory) - Only if connected
+        # 2. Check Supabase (Permanent Memory)
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -98,7 +102,7 @@ if uploaded_files:
                     st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
                     st.rerun()
             except:
-                pass # If DB fails, fall back to AI
+                pass
 
         # 3. The "Legendary 50-Year Master Trader" Prompt
         system_prompt = """
@@ -131,26 +135,57 @@ if uploaded_files:
         
         try:
             images = [Image.open(file) for file in uploaded_files]
+            
             with st.spinner("Analyzing charts..."):
-                chat = client.chats.create(model="gemini-3.6-flash")
-                response = chat.send_message(
-                    message=[system_prompt, *images],
-                    config=genai.types.GenerateContentConfig(temperature=0.0)
-                )
-                
-                parsed_data = parse_ai_response(response.text)
+                try:
+                    # --- FIRST TRY: GEMINI ---
+                    chat = client.chats.create(model="gemini-3.6-flash")
+                    response = chat.send_message(
+                        message=[system_prompt, *images],
+                        config=genai.types.GenerateContentConfig(temperature=0.0)
+                    )
+                    ai_text = response.text
+                    st.success("✅ Analyzed by Google Gemini (Primary AI)")
+                    
+                except Exception as gemini_error:
+                    # --- FALL BACK TO GROQ (Free & Unlimited) ---
+                    st.warning("⚠️ Gemini quota reached! Using Groq (Free Backup AI)...")
+                    
+                    # Convert images to Base64 for Groq
+                    base64_images = []
+                    for img in images:
+                        buffered = BytesIO()
+                        img.save(buffered, format="JPEG")
+                        base64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                        base64_images.append(f"data:image/jpeg;base64,{base64_str}")
+                    
+                    # Build Groq Content
+                    groq_content = [{"type": "text", "text": system_prompt}]
+                    for b64 in base64_images:
+                        groq_content.append({"type": "image_url", "image_url": {"url": b64}})
+                    
+                    groq_response = groq_client.chat.completions.create(
+                        model="llama-3.2-90b-vision-preview",
+                        messages=[{"role": "user", "content": groq_content}],
+                        temperature=0.0
+                    )
+                    ai_text = groq_response.choices[0].message.content
+                    st.success("✅ Analyzed by Groq Llama 3.2 Vision (Backup AI)")
+
+                # --- PROCESS THE RESPONSE ---
+                parsed_data = parse_ai_response(ai_text)
                 
                 if parsed_data:
-                    st.session_state.analysis_result = response.text
+                    st.session_state.analysis_result = ai_text
                     st.session_state.auto_symbol = parsed_data['symbol']
                     st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
                     st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
                     st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    # Save to Supabase (Permanent Memory) - Only if connected
+                    # Save to Supabase
                     if supabase_connected:
                         try:
-                            cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
+                            cache_data = {'text': ai_text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except:
                             pass
