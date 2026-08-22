@@ -7,20 +7,33 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (FINAL DARK MODE) ---
+# --- STYLING (DARK MODE WITH BLUE TEXT) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
     .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
     [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
-    h2, h3, h4, h5, h6 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
-    p, li, span, label, div {{ color: #f0f2f6 !important; }}
+    
+    /* Green Headers */
+    h1, h2, h3, h4, h5, h6 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
+    
+    /* BLUE MAIN TEXT (Changed from white to blue) */
+    p, li, span, label, div {{ color: #00aaff !important; }}
+    
+    /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00ff88 !important; }}
+    
+    /* Buttons */
     .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; border: none; }}
     .stButton>button:hover {{ background-color: #00cc6e; color: #000; }}
+    
+    /* File Uploader & Containers */
     [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00ff88; border-radius: 10px; padding: 10px; }}
     [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #00ff88 !important; border-radius: 10px; padding: 10px; }}
+    
+    /* Progress Bars */
     .stProgress > div > div > div > div {{ background-color: #00ff88 !important; }}
+    
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
@@ -28,7 +41,8 @@ st.markdown(f"""
 
 # --- HEADER (DIRECT HTML INJECTION - GUARANTEED GREEN) ---
 st.markdown("<h1 style='color: #00ff88; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #00ff88; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+# Caption changed to Blue
+st.markdown("<p style='color: #00aaff; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -319,7 +333,7 @@ else:
         st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
         st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
 
-# --- FOOTER (DIRECT HTML INJECTION - GUARANTEED GREEN) ---
+# --- FOOTER (DIRECT HTML INJECTION - GREEN) ---
 st.divider()
 st.markdown("""
 <div style="color: #00ff88; text-align: center; font-family: 'Courier New', monospace;">
