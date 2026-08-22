@@ -14,7 +14,6 @@ st.markdown(f"""
     .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117; }}
     h1, h2, h3, h4 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
     .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; }}
-    .report-box {{ background-color: rgba(20, 20, 20, 0.9); border: 1px solid #00ff88; border-radius: 10px; padding: 15px; }}
     footer {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
@@ -36,11 +35,10 @@ try:
 except:
     supabase_connected = False
 
-# --- USAGE COUNTER LOGIC (FIXED to prevent reset bug) ---
+# --- USAGE COUNTER LOGIC ---
 USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
 
-# Force the limit reached state externally
 if 'limit_reached' not in st.session_state:
     st.session_state.limit_reached = False
 
@@ -59,11 +57,19 @@ def increment_usage():
         f.write(str(count + 1))
     return count + 1
 
-# --- CLEANING FUNCTION (Fixes the messy AI text) ---
+# --- IMPROVED CLEANING FUNCTION (Fixes all the weird AI spacing) ---
 def clean_analysis(text):
-    # Fixes glitches like "79,600,pricesuffered" -> "79,600, prices suffered"
-    text = re.sub(r'(?<=\d),(?=\w)', ', ', text)
+    # 1. Remove spaces between numbers (e.g., 7 9 , 6 0 0 -> 79,600)
+    text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
+    # 2. Remove spaces between letters (e.g., p r i c e -> price)
+    text = re.sub(r'(?<=\w)\s+(?=\w)', ' ', text)
+    # 3. Collapse multiple newlines and spaces into one
     text = re.sub(r'\s+', ' ', text).strip()
+    # 4. Add a newline before specific headings to make it neat
+    text = text.replace("4H Trend Analysis:", "\n\n**4H Trend Analysis:**")
+    text = text.replace("30M Pattern Analysis:", "\n\n**30M Pattern Analysis:**")
+    text = text.replace("5M Sniper Entry:", "\n\n**5M Sniper Entry:**")
+    text = text.replace("Final Verdict:", "\n\n**Final Verdict:**")
     return text
 
 # --- SYMBOLS ---
@@ -103,7 +109,6 @@ with st.sidebar:
     
     st.divider()
     
-    # --- SMART USAGE METER ---
     current_usage = get_usage_count()
     if st.session_state.limit_reached:
         current_usage = DAILY_LIMIT
@@ -113,7 +118,7 @@ with st.sidebar:
     
     if st.session_state.limit_reached or remaining == 0:
         st.error("🚫 **LIMIT REACHED**")
-        st.progress(1.0) # Full red bar
+        st.progress(1.0)
     else:
         st.progress(current_usage / DAILY_LIMIT)
         
@@ -135,7 +140,6 @@ if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
-        # 1. Check Daily Limit
         if get_usage_count() >= DAILY_LIMIT or st.session_state.limit_reached:
             st.session_state.limit_reached = True
             st.warning("""
@@ -146,13 +150,11 @@ if uploaded_files:
             """)
             st.stop()
         
-        # 2. Calculate Hash
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
-        # 3. Check Supabase Cache
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -168,7 +170,6 @@ if uploaded_files:
             except:
                 pass
 
-        # 4. The "Legendary 50-Year Master Trader" Prompt
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
@@ -211,13 +212,13 @@ if uploaded_files:
                 if parsed_data:
                     increment_usage()
                     
+                    # Apply the cleaner here!
                     st.session_state.analysis_result = clean_analysis(response.text)
                     st.session_state.auto_symbol = parsed_data['symbol']
                     st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
                     st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
                     st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    # Save to Supabase
                     if supabase_connected:
                         try:
                             cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
@@ -231,31 +232,24 @@ if uploaded_files:
                     st.error("❌ AI did not return the exact numbers. Check the output format.")
                 
         except Exception as e:
-            # THE CUSTOM ERROR MESSAGE FOR 429 / QUOTA LIMIT
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                # Force the sidebar to show limit reached
                 st.session_state.limit_reached = True
-                
                 st.warning("""
                 ### 🚫 Daily Limit Reached
                 You have reached your daily scan limit of 20 charts. 
                 
                 Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
                 """)
-                # Force sidebar refresh
                 st.rerun()
             else:
                 st.error(f"❌ AI Error: {e}")
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
-        # NEAT DESIGN: Using a bordered container for the report
+        # THIS IS THE FIX: Native Streamlit Container (No custom HTML Divs!)
+        # It automatically keeps the text inside the box and wraps it perfectly.
         with st.container(border=True):
-            st.markdown(f"""
-            <div class='report-box'>
-                {st.session_state.analysis_result}
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(st.session_state['analysis_result'])
 
 st.divider()
 
