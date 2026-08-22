@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING ---
+# --- STYLING (THE "FORCE" FIX) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -15,6 +15,11 @@ st.markdown(f"""
     h1, h2, h3, h4 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
     .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; }}
     footer {{visibility: hidden;}}
+    /* THIS LINE FORCES THE TEXT TO STAY INSIDE THE BOX */
+    [data-testid="stMarkdownContainer"] {{
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -57,19 +62,32 @@ def increment_usage():
         f.write(str(count + 1))
     return count + 1
 
-# --- IMPROVED CLEANING FUNCTION (Fixes all the weird AI spacing) ---
+# --- THE "CLEANER" FIX (Inserts spaces where the AI forgot them) ---
 def clean_analysis(text):
-    # 1. Remove spaces between numbers (e.g., 7 9 , 6 0 0 -> 79,600)
+    # 1. Fix random spaces between numbers
     text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
-    # 2. Remove spaces between letters (e.g., p r i c e -> price)
+    # 2. Fix random spaces between letters
     text = re.sub(r'(?<=\w)\s+(?=\w)', ' ', text)
-    # 3. Collapse multiple newlines and spaces into one
+    # 3. Collapse multiple spaces
     text = re.sub(r'\s+', ' ', text).strip()
-    # 4. Add a newline before specific headings to make it neat
+    
+    # 4. Fix missing spaces after periods (formingalowerhighwick.Price -> forming a lower high wick. Price)
+    text = re.sub(r'\.(?=[A-Z])', '. ', text)
+    # 5. Fix missing spaces between lower/upper case (wordNext -> word Next)
+    text = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', text)
+    
+    # 6. Fix the specific glitches you mentioned
+    text = text.replace("Pricehas", "Price has")
+    text = text.replace("Priceis", "Price is")
+    text = text.replace("Pricewill", "Price will")
+    text = text.replace("formingalowerhighwick", "forming a lower high wick")
+    
+    # 7. Add clean line breaks before headers
     text = text.replace("4H Trend Analysis:", "\n\n**4H Trend Analysis:**")
     text = text.replace("30M Pattern Analysis:", "\n\n**30M Pattern Analysis:**")
     text = text.replace("5M Sniper Entry:", "\n\n**5M Sniper Entry:**")
     text = text.replace("Final Verdict:", "\n\n**Final Verdict:**")
+    
     return text
 
 # --- SYMBOLS ---
@@ -170,10 +188,13 @@ if uploaded_files:
             except:
                 pass
 
+        # THE "PREVENTION" FIX (Updated Prompt)
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
         I am uploading exactly three screenshots: 4H, 30M, and 5M.
+
+        CRITICAL RULE: Use standard spacing. Ensure there is a space after every word and every period. Never output solid strings of text like "Priceisnow". Always format it as "Price is now". Use a new line and a blank line before each section.
 
         **📊 4H Trend Analysis:**
         Break down the macro bias, structure, and major support or resistance levels (like the red line).
@@ -212,7 +233,6 @@ if uploaded_files:
                 if parsed_data:
                     increment_usage()
                     
-                    # Apply the cleaner here!
                     st.session_state.analysis_result = clean_analysis(response.text)
                     st.session_state.auto_symbol = parsed_data['symbol']
                     st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
@@ -246,8 +266,6 @@ if uploaded_files:
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
-        # THIS IS THE FIX: Native Streamlit Container (No custom HTML Divs!)
-        # It automatically keeps the text inside the box and wraps it perfectly.
         with st.container(border=True):
             st.markdown(st.session_state['analysis_result'])
 
