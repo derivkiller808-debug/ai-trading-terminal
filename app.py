@@ -22,11 +22,14 @@ st.markdown(f"""
 st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Auto-Key Rotation.")
 
-# --- SETUP (Key Pool Logic) ---
+# --- SETUP (Key Pool Logic & Reset Fix) ---
 try:
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",")]
-    if 'current_key_index' not in st.session_state:
+    
+    # THE FIX: If the index is out of bounds for the new list, reset to 0
+    if 'current_key_index' not in st.session_state or st.session_state.current_key_index >= len(KEYS_LIST):
         st.session_state.current_key_index = 0
+        
     API_KEY = KEYS_LIST[st.session_state.current_key_index]
     client = genai.Client(api_key=API_KEY)
 except Exception as e:
@@ -42,7 +45,7 @@ except:
 # --- USAGE COUNTER LOGIC ---
 USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
-TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT  # 10 keys = 200 total scans
+TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT
 
 if 'limit_reached' not in st.session_state:
     st.session_state.limit_reached = False
@@ -120,11 +123,17 @@ with st.sidebar:
     current_usage = get_usage_count()
     remaining = max(0, TOTAL_LIMIT - current_usage)
     
-    # UPDATED UI - No more "Per Key", no more caption
     st.markdown("### 📊 Daily Scan Limit")
     st.progress(current_usage / TOTAL_LIMIT)
     st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
     st.markdown(f"**Remaining:** {remaining} scans")
+    
+    # THE NEW RESET BUTTON
+    if st.button("🔄 Reset Scan Counter"):
+        st.session_state.current_key_index = 0
+        if os.path.exists(USAGE_FILE):
+            os.remove(USAGE_FILE)
+        st.rerun()
     
     st.divider()
     
