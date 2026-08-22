@@ -21,7 +21,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Dual AI Engine (Gemini & Groq). Auto-fallback for unlimited scans.")
+st.caption("Dual AI Engine (Gemini & Groq). Auto-fallback to prevent quota limits.")
 
 # --- API SETUP (Graceful) ---
 try:
@@ -145,17 +145,15 @@ if uploaded_files:
                         config=genai.types.GenerateContentConfig(temperature=0.0)
                     )
                     ai_text = response.text
-                    st.success("✅ Analyzed by Google Gemini")
                     
-                except Exception:
+                except Exception as gemini_error:
                     # --- FALL BACK TO GROQ (Free & Unlimited) ---
                     st.info("Groq Scanning...")
                     
-                    # Convert images to Base64 for Groq
+                    # Convert images to Base64 for Groq (Fixed RGBA issue)
                     base64_images = []
                     for img in images:
-                        # Convert to RGB to drop the transparency channel
-                        img = img.convert("RGB")
+                        img = img.convert("RGB")  # <--- FIX: Converts PNG/RGBA to RGB
                         buffered = BytesIO()
                         img.save(buffered, format="JPEG")
                         base64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -167,12 +165,11 @@ if uploaded_files:
                         groq_content.append({"type": "image_url", "image_url": {"url": b64}})
                     
                     groq_response = groq_client.chat.completions.create(
-                        model="llama-3.2-11b-vision-preview",  # UPDATED MODEL
+                        model="llama-3.2-11b-vision-preview",  # <--- UPDATED MODEL
                         messages=[{"role": "user", "content": groq_content}],
                         temperature=0.0
                     )
                     ai_text = groq_response.choices[0].message.content
-                    st.success("✅ Analyzed by Groq Llama 3.2 Vision")
 
                 # --- PROCESS THE RESPONSE ---
                 parsed_data = parse_ai_response(ai_text)
