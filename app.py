@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (DARK MODE WITH BLUE TEXT) ---
+# --- STYLING (DARK MODE WITH TRANSPARENT BUTTON) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -17,18 +17,28 @@ st.markdown(f"""
     /* Green Headers */
     h1, h2, h3, h4, h5, h6 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
     
-    /* BLUE MAIN TEXT (Changed from white to blue) */
+    /* BLUE MAIN TEXT */
     p, li, span, label, div {{ color: #00aaff !important; }}
     
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00ff88 !important; }}
     
-    /* Buttons */
-    .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; border: none; }}
-    .stButton>button:hover {{ background-color: #00cc6e; color: #000; }}
+    /* TRANSPARENT BUTTONS - UPDATED */
+    .stButton>button {{
+        background-color: rgba(0, 255, 136, 0.7) !important;  /* Semi-transparent */
+        color: #000 !important;
+        font-weight: bold;
+        border: 1px solid rgba(0, 255, 136, 0.9) !important;   /* Visible border */
+        border-radius: 5px;
+        transition: all 0.2s ease;
+    }}
+    .stButton>button:hover {{
+        background-color: rgba(0, 255, 136, 0.85) !important;  /* More opaque on hover */
+        border-color: #00ff88 !important;
+    }}
     
     /* File Uploader & Containers */
-    [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00ff88; border-radius: 10px; padding: 10px; }}
+    [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00ff88 !important; border-radius: 10px; padding: 10px; }}
     [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #00ff88 !important; border-radius: 10px; padding: 10px; }}
     
     /* Progress Bars */
@@ -39,9 +49,8 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER (DIRECT HTML INJECTION - GUARANTEED GREEN) ---
+# --- HEADER (DIRECT HTML INJECTION - GREEN) ---
 st.markdown("<h1 style='color: #00ff88; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-# Caption changed to Blue
 st.markdown("<p style='color: #00aaff; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
