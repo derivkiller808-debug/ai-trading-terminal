@@ -110,12 +110,6 @@ with st.sidebar:
     
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     
-    st.markdown("### 🧹 Reset App State")
-    if st.button("Force Reset Everything"):
-        if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
-        st.session_state.clear()
-        st.rerun()
-    
     st.divider()
     
     st.subheader("📈 Upload Charts")
@@ -319,4 +313,4 @@ else:
 
 # --- FOOTER ---
 st.divider()
-st.markdown("### **Created by Alex Nderitu**")
+st.markdown("### **Created by Alex Nderitu**\n\n**Whatsapp +254759914001 for Further Assistance.**")
