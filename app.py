@@ -24,21 +24,15 @@ st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Auto-Key
 
 # --- SETUP (Key Pool Logic) ---
 try:
-    # Get the list of keys from Secrets (comma separated)
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",")]
-    
-    # Initialize or get the current key index from session state
     if 'current_key_index' not in st.session_state:
         st.session_state.current_key_index = 0
-    
     API_KEY = KEYS_LIST[st.session_state.current_key_index]
     client = genai.Client(api_key=API_KEY)
-    
 except Exception as e:
     st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets (separate with commas). Error: {e}")
     st.stop()
 
-# Try to set up Supabase, but if it fails, the app still works!
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
@@ -48,6 +42,7 @@ except:
 # --- USAGE COUNTER LOGIC ---
 USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
+TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT  # 10 keys = 200 total scans
 
 if 'limit_reached' not in st.session_state:
     st.session_state.limit_reached = False
@@ -67,7 +62,7 @@ def increment_usage():
         f.write(str(count + 1))
     return count + 1
 
-# --- TEXT CLEANER (Fixes messy AI formatting) ---
+# --- TEXT CLEANER ---
 def clean_analysis(text):
     text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
     text = re.sub(r'(?<=\w)\s+(?=\w)', ' ', text)
@@ -120,16 +115,16 @@ with st.sidebar:
     st.divider()
     
     total_keys = len(KEYS_LIST)
-    st.markdown(f"⚙️ **Active Key Rotation:** {total_keys} keys loaded")
+    st.markdown(f"⚙️ **Active Keys:** {total_keys} loaded")
     
     current_usage = get_usage_count()
-    remaining = max(0, DAILY_LIMIT - current_usage)
+    remaining = max(0, TOTAL_LIMIT - current_usage)
     
-    st.markdown("### 📊 Daily Scan Limit (Per Key)")
-    st.progress(current_usage / DAILY_LIMIT)
-    st.markdown(f"**Used:** {current_usage} / {DAILY_LIMIT}")
+    # UPDATED UI - No more "Per Key", no more caption
+    st.markdown("### 📊 Daily Scan Limit")
+    st.progress(current_usage / TOTAL_LIMIT)
+    st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
     st.markdown(f"**Remaining:** {remaining} scans")
-    st.caption("When one key hits 20, the app automatically switches to the next key!")
     
     st.divider()
     
@@ -143,7 +138,6 @@ if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
-        # Check if ALL keys are exhausted
         if st.session_state.current_key_index >= len(KEYS_LIST):
             st.session_state.limit_reached = True
             st.warning("""
@@ -159,7 +153,6 @@ if uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
-        # Check Supabase Cache
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -207,11 +200,8 @@ if uploaded_files:
         
         try:
             images = [Image.open(file) for file in uploaded_files]
-            
             with st.spinner("Analyzing charts..."):
-                # AUTO KEY ROTATION LOOP
                 for i in range(len(KEYS_LIST)):
-                    # Re-assign client based on current index
                     API_KEY = KEYS_LIST[st.session_state.current_key_index]
                     client = genai.Client(api_key=API_KEY)
                     try:
@@ -256,7 +246,6 @@ if uploaded_files:
                                 """)
                                 st.stop()
                             else:
-                                # It will automatically loop and try the next key!
                                 continue
                         else:
                             raise e
