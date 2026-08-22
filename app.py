@@ -18,14 +18,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk.")
+st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
 # --- API SETUP (Graceful) ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEY. Error: {e}")
+    st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
     st.stop()
 
 # Try to set up Supabase, but if it fails, the app still works!
@@ -100,21 +100,31 @@ if uploaded_files:
             except:
                 pass # If DB fails, fall back to AI
 
-        # 3. The NEW Prompt (Analysis Text + Strict Format)
+        # 3. The FULL Per-Timeframe Report Prompt
         system_prompt = """
-        You are a top-tier, brilliant technical analyst. I am uploading exactly three charts: 4H, 30M, and 5M.
-        Analyze the MACRO TREND on 4H. Find the PRICE ACTION PATTERN on 30M. THEN declare BUY or SELL.
-        If neutral, say NEUTRAL.
-        
-        FIRST: Write a concise, 3-4 sentence professional breakdown explaining exactly what you see on the 4H trend and the 30M pattern.
-        
-        THEN: At the very end, output the exact trade levels in this strict format:
+        You are a top-tier, brilliant technical analyst with 20 years of experience. You analyze crypto charts using Multi-Timeframe Confluence.
+
+        I am uploading exactly three screenshots: 4H, 30M, and 5M.
+
+        **STEP 1: FULL PER-TIMEFRAME ANALYSIS REPORT**
+        Give me a detailed breakdown of *each* timeframe:
+
+        - **4H Trend Analysis:** What is the macro bias? Are we in an uptrend, downtrend, or range? Is there a major support or resistance level (e.g., the red line)?
+        - **30M Pattern Analysis:** What price action pattern is forming (e.g., double top, bull flag, head and shoulders, break of structure)?
+        - **5M Sniper Entry:** What is the immediate liquidity, order block, or rejection wick that confirms the entry point?
+
+        **STEP 2: FINAL VERDICT**
+        State clearly whether I should BUY, SELL, or stay NEUTRAL, and explain why in 1-2 sentences based on the above analysis.
+
+        **STEP 3: STRICT TRADE DATA FORMAT**
+        At the *very end* of your response, output these exact 5 lines (and ONLY these 5 lines at the end) so my calculator can parse them:
+
         Symbol: XAUUSD (or BTCUSD or EURUSD)
         Direction: SELL
         Entry: 2450.50
         Stop Loss: 2460.00
         Take Profit: 2400.00
-        
+
         DO NOT calculate lot sizes, leverage, or margin.
         """
         
