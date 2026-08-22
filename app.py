@@ -19,8 +19,12 @@ st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk.")
 
 # --- API SETUP ---
-API_KEY = st.secrets.get("GEMINI_API_KEY", "PASTE_YOUR_KEY_HERE")
-client = genai.Client(api_key=API_KEY)
+try:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    client = genai.Client(api_key=API_KEY)
+except Exception as e:
+    st.error(f"❌ CRITICAL ERROR: Missing or incorrect GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
+    st.stop()
 
 # --- SYMBOLS LIST ---
 placeholder = "Select Instrument..."
@@ -61,7 +65,7 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS ---
+# --- AI ANALYSIS (SINGLE MODEL - BULLETPROOF) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
@@ -80,53 +84,35 @@ if uploaded_files:
         
         try:
             images = [Image.open(file) for file in uploaded_files]
-            models = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
-            votes = []
-            valid_results = []
             
-            with st.spinner("Running 3-AI Consensus..."):
-                for model_name in models:
-                    try:
-                        chat = client.chats.create(model=model_name)
-                        response = chat.send_message(contents=[system_prompt, *images], config=genai.types.GenerateContentConfig(temperature=0.0))
-                        parsed = parse_ai_response(response.text)
-                        if parsed:
-                            votes.append(parsed['direction'])
-                            valid_results.append(parsed)
-                    except:
-                        continue
-
-            buy_count = votes.count("BUY"); sell_count = votes.count("SELL"); neutral_count = votes.count("NEUTRAL")
-            final_direction = "NEUTRAL"
-            if buy_count > sell_count and buy_count >= 2: final_direction = "BUY"
-            elif sell_count > buy_count and sell_count >= 2: final_direction = "SELL"
-            
-            winning_results = [r for r in valid_results if r['direction'] == final_direction]
-            if final_direction == "NEUTRAL" or not winning_results:
-                final_text = f"**AI Consensus:** {neutral_count} Neutral, {buy_count} Buy, {sell_count} Sell.\n**Action: NEUTRAL / NO TRADE.**"
-                st.session_state.analysis_result = final_text
-                # Set to placeholder
-                st.session_state.auto_symbol = placeholder
-                st.session_state.entry_field = ""
-                st.session_state.sl_field = ""
-                st.session_state.tp_field = ""
-            else:
-                avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
-                avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
-                avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
-                sym = winning_results[0]['symbol']
-                final_text = f"**AI Consensus (Majority Vote {final_direction})**\n\nSymbol: {sym}\nDirection: {final_direction}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
+            with st.spinner("Analyzing charts..."):
+                # Using the guaranteed available model
+                chat = client.chats.create(model="gemini-2.5-flash")
+                response = chat.send_message(
+                    contents=[system_prompt, *images],
+                    config=genai.types.GenerateContentConfig(temperature=0.0)
+                )
                 
-                st.session_state.analysis_result = final_text
-                st.session_state.auto_symbol = sym
-                st.session_state.entry_field = f"{avg_entry:.2f}"
-                st.session_state.sl_field = f"{avg_sl:.2f}"
-                st.session_state.tp_field = f"{avg_tp:.2f}"
-            
-            st.rerun()
-            
+                parsed_data = parse_ai_response(response.text)
+                
+                if parsed_data:
+                    # Auto-Fill
+                    st.session_state.analysis_result = response.text
+                    st.session_state.auto_symbol = parsed_data['symbol']
+                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
+                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
+                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
+                    st.success("✅ Analysis Complete!")
+                else:
+                    st.session_state.analysis_result = f"AI did not return numbers in the required format. Raw text: {response.text}"
+                    st.warning("Could not parse exact numbers. Check AI output format.")
+                
+                st.rerun()
+                
         except Exception as e:
-            st.error(f"AI Error: {e}")
+            # This will print the EXACT error to the screen
+            st.error(f"❌ AI Error: {e}")
+            st.error("If this says '404' or 'Model not found', change 'gemini-2.5-flash' to another model in the code.")
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
