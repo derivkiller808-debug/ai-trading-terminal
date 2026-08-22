@@ -110,18 +110,14 @@ with st.sidebar:
     
     st.divider()
     
-    st.markdown(f"⚙️ **Active Keys Loaded:** {len(KEYS_LIST)}")
-    current_usage = get_usage_count()
-    remaining = max(0, TOTAL_LIMIT - current_usage)
+    st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     
-    st.markdown("### 📊 Daily Scan Limit")
-    st.progress(current_usage / TOTAL_LIMIT)
-    st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
-    st.markdown(f"**Remaining:** {remaining} scans")
-    
-    if st.button("🧹 Reset Usage Counter"):
+    st.markdown("### 🧹 Reset App State")
+    if st.button("Force Reset Everything"):
+        # Wipe the local file and session state
         if os.path.exists(USAGE_FILE):
             os.remove(USAGE_FILE)
+        st.session_state.clear()
         st.rerun()
     
     st.divider()
@@ -136,6 +132,10 @@ if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
+        # Force clear the local file right before scanning to avoid any blocking
+        if os.path.exists(USAGE_FILE):
+            os.remove(USAGE_FILE)
+
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
@@ -187,11 +187,16 @@ if uploaded_files:
         """
         
         success = False
-        
+        error_messages = []
+
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
+                # Loop through every key
                 for i, key in enumerate(KEYS_LIST):
+                    # Mask the key so we don't accidentally post it
+                    masked_key = f"Key {i+1} ({key[:6]}...)"
+                    
                     try:
                         client = genai.Client(api_key=key)
                         chat = client.chats.create(model="gemini-3.6-flash")
@@ -217,24 +222,32 @@ if uploaded_files:
                                 except:
                                     pass
 
-                            st.success(f"✅ Analysis Complete! (Used Key {i + 1})")
+                            st.success(f"✅ Analysis Complete! (Used {masked_key})")
                             success = True
                             st.rerun()
                             break
                             
                     except Exception as e:
-                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            continue
+                        # Capture the error to actually see what's going on
+                        err_str = str(e)
+                        if "429" in err_str:
+                            error_messages.append(f"{masked_key}: LIMIT EXHAUSTED (429)")
+                        elif "400" in err_str:
+                            error_messages.append(f"{masked_key}: BAD KEY FORMAT (400) - Check commas!")
+                        elif "404" in err_str:
+                            error_messages.append(f"{masked_key}: MODEL NOT FOUND (404)")
                         else:
-                            break
-                            
+                            error_messages.append(f"{masked_key}: {err_str[:50]}")
+
                 if not success:
-                    st.warning("""
-                    ### 🚫 ALL KEYS LIMIT REACHED
-                    All keys have been exhausted. 
+                    st.error("### 🚫 ALL KEYS LIMIT REACHED")
+                    st.warning("Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.")
                     
-                    Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
-                    """)
+                    # This will show you EXACTLY what happened!
+                    st.divider()
+                    st.subheader("🔍 Diagnostics (Read this!)")
+                    for msg in error_messages:
+                        st.write(msg)
                 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
