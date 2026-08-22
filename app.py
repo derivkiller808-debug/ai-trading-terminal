@@ -22,13 +22,17 @@ st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk."
 API_KEY = st.secrets.get("GEMINI_API_KEY", "PASTE_YOUR_KEY_HERE")
 client = genai.Client(api_key=API_KEY)
 
+# --- SYMBOLS LIST ---
+symbol_list = ["BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
+
 # --- SESSION STATE (For Auto-Fill) ---
 if 'auto_entry' not in st.session_state: st.session_state.auto_entry = ""
 if 'auto_sl' not in st.session_state: st.session_state.auto_sl = ""
 if 'auto_tp' not in st.session_state: st.session_state.auto_tp = ""
-if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = "BTCUSD"
+# FIXED: Set the default to the full symbol string
+if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = symbol_list[0]
 
-# --- PARSING FUNCTION ---
+# --- PARSING FUNCTION (Robust) ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
     entry_match = re.search(r"Entry:\s*([\d.]+)", text, re.IGNORECASE)
@@ -39,7 +43,7 @@ def parse_ai_response(text):
         sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
         # Map AI symbols to our dropdown options
         if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
-        elif sym in ["EURUSD", "GBPUSD", "USDJPY"]: sym = "EURUSD (Forex)"
+        elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
         
         return {
@@ -71,7 +75,7 @@ if uploaded_files:
         
         **CRITICAL FORMAT RULES:**
         1. STRICTLY output your final trade levels in this exact format:
-        Symbol: XAUUSD
+        Symbol: XAUUSD (or BTCUSD or EURUSD)
         Direction: SELL
         Entry: 2450.50
         Stop Loss: 2460.00
@@ -114,10 +118,15 @@ st.caption("Values fill automatically after analysis. You can manually override 
 
 col1, col2 = st.columns(2)
 with col1:
-    # User can override symbol
+    # SAFE INDEXING: This prevents the 'ValueError: list.index(x): x not in list' crash
+    try:
+        default_index = symbol_list.index(st.session_state.auto_symbol)
+    except ValueError:
+        default_index = 0  # If the value doesn't match, fall back to Bitcoin
+    
     instrument = st.selectbox("Select Instrument (Auto-filled by AI)", 
-                              ["BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"], 
-                              index=["BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"].index(st.session_state.auto_symbol))
+                              symbol_list, 
+                              index=default_index)
     
     # Text inputs allow programmatic auto-fill
     entry_input = st.text_input("Entry Price", value=st.session_state.auto_entry, key="entry_field")
