@@ -21,7 +21,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Dual AI Engine (Gemini & Groq). Auto-fallback to prevent quota limits.")
+st.caption("Dual AI Engine (Gemini & Groq). Auto-fallback for unlimited scans.")
 
 # --- API SETUP (Graceful) ---
 try:
@@ -145,15 +145,17 @@ if uploaded_files:
                         config=genai.types.GenerateContentConfig(temperature=0.0)
                     )
                     ai_text = response.text
-                    st.success("✅ Analyzed by Google Gemini (Primary AI)")
+                    st.success("✅ Analyzed by Google Gemini")
                     
-                except Exception as gemini_error:
+                except Exception:
                     # --- FALL BACK TO GROQ (Free & Unlimited) ---
-                    st.warning("⚠️ Gemini quota reached! Using Groq (Free Backup AI)...")
+                    st.info("Groq Scanning...")
                     
-                    # Convert images to Base64 for Groq
+                    # Convert images to Base64 for Groq (FIXED for RGBA/PNG)
                     base64_images = []
                     for img in images:
+                        # Convert to RGB to drop the transparency channel
+                        img = img.convert("RGB")
                         buffered = BytesIO()
                         img.save(buffered, format="JPEG")
                         base64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -170,7 +172,7 @@ if uploaded_files:
                         temperature=0.0
                     )
                     ai_text = groq_response.choices[0].message.content
-                    st.success("✅ Analyzed by Groq Llama 3.2 Vision (Backup AI)")
+                    st.success("✅ Analyzed by Groq Llama 3.2 Vision")
 
                 # --- PROCESS THE RESPONSE ---
                 parsed_data = parse_ai_response(ai_text)
