@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (FINAL COMPREHENSIVE DARK MODE) ---
+# --- STYLING (FINAL DARK MODE + GREEN TEXT) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -24,10 +24,15 @@ st.markdown(f"""
         border-right: 1px solid #2d313e;
     }}
 
-    /* Headers */
+    /* Headers - Main Title, Sub-headers, and Footer Header - ALL GREEN */
     h1, h2, h3, h4, h5, h6 {{
         color: #00ff88 !important;
         font-family: 'Courier New', monospace;
+    }}
+
+    /* THE CAPTION (Upload 4H, 30M, 5M...) - GREEN */
+    [data-testid="stCaptionContainer"] {{
+        color: #00ff88 !important;
     }}
 
     /* Main text */
@@ -76,7 +81,7 @@ st.markdown(f"""
         background-color: #00ff88 !important;
     }}
 
-    /* Hide footer default text, replace with our own */
+    /* Hide default footer */
     footer {{visibility: hidden;}}
 
     /* Force word wrap inside borders */
@@ -88,7 +93,8 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Ultimate Accuracy Mode: Triple AI Consensus & Conditional Speculation")
+# Caption explicitly colored green via CSS
+st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
 # --- SETUP ---
 try:
@@ -379,6 +385,10 @@ else:
         st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
         st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
 
-# --- FOOTER ---
+# --- FOOTER (FORCED GREEN USING HTML) ---
 st.divider()
-st.markdown("### **Created by Alex Nderitu**\n\n**Whatsapp +254759914001 for Further Assistance.**")
+st.markdown(
+    "<h3 style='color: #00ff88;'>Created by Alex Nderitu</h3>"
+    "<p style='color: #00ff88;'>Whatsapp +254759914001 for Further Assistance.</p>",
+    unsafe_allow_html=True
+)
