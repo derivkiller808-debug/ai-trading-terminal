@@ -2,6 +2,7 @@ import streamlit as st
 import math
 import re
 import hashlib
+from datetime import date
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
@@ -20,7 +21,7 @@ st.markdown(f"""
 st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
-# --- API SETUP (Graceful) ---
+# --- API SETUP ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
@@ -28,12 +29,51 @@ except Exception as e:
     st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
     st.stop()
 
-# Try to set up Supabase, but if it fails, the app still works!
+# --- SUPABASE SETUP (For usage tracking) ---
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
 except:
     supabase_connected = False
+
+# --- DAILY LIMIT CONSTANT ---
+DAILY_LIMIT = 20
+
+# --- FUNCTION TO GET TODAY'S USAGE ---
+def get_usage():
+    if not supabase_connected:
+        # Fallback to session state if DB fails
+        if 'scans_today' not in st.session_state:
+            st.session_state.scans_today = 0
+        return st.session_state.scans_today
+    
+    try:
+        today = str(date.today())
+        response = supabase.table('daily_usage').select('scan_count').eq('scan_date', today).execute()
+        if response.data:
+            return response.data[0]['scan_count']
+        else:
+            # Insert row if not exists
+            supabase.table('daily_usage').insert({'scan_date': today, 'scan_count': 0}).execute()
+            return 0
+    except:
+        return 0
+
+# --- FUNCTION TO INCREMENT USAGE ---
+def increment_usage():
+    if not supabase_connected:
+        st.session_state.scans_today += 1
+        return
+    
+    try:
+        today = str(date.today())
+        # Upsert to increment
+        current = get_usage()
+        supabase.table('daily_usage').upsert(
+            {'scan_date': today, 'scan_count': current + 1}
+        ).execute()
+    except:
+        pass
 
 # --- SYMBOLS LIST ---
 placeholder = "Select Instrument..."
@@ -74,9 +114,28 @@ with st.sidebar:
 
 st.divider()
 
+# --- USAGE DISPLAY (Progress Bar) ---
+current_usage = get_usage()
+remaining = max(0, DAILY_LIMIT - current_usage)
+
+st.subheader("📊 Daily Scan Limit")
+st.progress(min(current_usage / DAILY_LIMIT, 1.0), text=f"Used: {current_usage} / {DAILY_LIMIT} charts")
+if remaining > 0:
+    st.caption(f"You have **{remaining}** scans left today.")
+else:
+    st.caption("You have reached your daily limit.")
+
+st.divider()
+
 # --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
+    
+    # If limit reached, show message
+    if current_usage >= DAILY_LIMIT:
+        st.error("You have reached your daily scan limit of 20 charts. Contact authdev Alex Nderitu via Whatsapp +254759914001 for License Activation")
+        st.stop()
+    
     if st.button("Run Top-Trader Analysis"):
         # 1. Calculate Hash
         hasher = hashlib.sha256()
@@ -132,6 +191,9 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
+                # Increment usage BEFORE calling API
+                increment_usage()
+                
                 chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message(
                     message=[system_prompt, *images],
@@ -147,7 +209,7 @@ if uploaded_files:
                     st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
                     st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    # Save to Supabase
+                    # Save to Supabase (Permanent Memory)
                     if supabase_connected:
                         try:
                             cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
