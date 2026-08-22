@@ -65,6 +65,18 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
+# --- CLEANING FUNCTION (Fixes the weird spacing) ---
+def clean_ai_text(text):
+    # Fix numbers like 7 7 , 0 0 0 -> 77,000
+    text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
+    # Fix commas and other punctuation separated by spaces
+    text = re.sub(r'\s+([,.;:!?])', r'\1', text)
+    # Fix hyphens (remove spaces around them)
+    text = re.sub(r'\s*-\s*', '-', text)
+    # Remove extra newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 # --- PARSING ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
@@ -94,10 +106,16 @@ with st.sidebar:
     # --- NEW: The Usage Meter ---
     current_usage = get_usage_count()
     remaining = max(0, DAILY_LIMIT - current_usage)
+    
     st.markdown("### 📊 Daily Scan Limit")
-    st.progress(current_usage / DAILY_LIMIT)
-    st.markdown(f"**Used:** {current_usage} / {DAILY_LIMIT}")
-    st.markdown(f"**Remaining:** {remaining} scans")
+    if current_usage >= DAILY_LIMIT:
+        # Shows RED when limit is reached
+        st.error("🚫 Limit Reached")
+        st.progress(1.0)
+    else:
+        st.progress(current_usage / DAILY_LIMIT)
+        st.caption(f"Used: {current_usage} / {DAILY_LIMIT}")
+        st.caption(f"Remaining: {remaining} scans")
     
     st.divider()
     
@@ -143,7 +161,7 @@ if uploaded_files:
             except:
                 pass
 
-        # 4. The "Legendary 50-Year Master Trader" Prompt
+        # 4. The "Legendary 50-Year Master Trader" Prompt (Cleaner Format)
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
@@ -161,8 +179,9 @@ if uploaded_files:
         **⚖️ Final Verdict:**
         Conclude clearly with a BUY, SELL, or NEUTRAL recommendation, backed by your expert reasoning.
 
-        **End your response with exactly these labels on new lines (no extra text after them), so my calculator can parse them:**
-
+        **IMPORTANT RULES FOR FORMAT:**
+        1. Use **Bold**, bullet points, and simple spacing. DO NOT use double spaces between words or digits.
+        2. End your response with exactly these labels on new lines, so my calculator can parse them:
         Symbol:
         Direction:
         Entry:
@@ -184,7 +203,6 @@ if uploaded_files:
                 parsed_data = parse_ai_response(response.text)
                 
                 if parsed_data:
-                    # Increment the usage count ONLY on success
                     increment_usage()
                     
                     st.session_state.analysis_result = response.text
@@ -207,7 +225,6 @@ if uploaded_files:
                     st.error("❌ AI did not return the exact numbers. Check the output format.")
                 
         except Exception as e:
-            # THE CUSTOM ERROR MESSAGE FOR 429 / QUOTA LIMIT
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 st.warning("""
                 ### 🚫 Daily Limit Reached
@@ -219,8 +236,12 @@ if uploaded_files:
                 st.error(f"❌ AI Error: {e}")
 
     if 'analysis_result' in st.session_state:
-        st.success("AI Analysis Summary:")
-        st.markdown(st.session_state['analysis_result'])
+        st.subheader("📊 Professional Analysis Report")
+        # Apply the Clean Text Engine here
+        cleaned_text = clean_ai_text(st.session_state['analysis_result'])
+        # Display inside a sleek, bordered container
+        with st.container(border=True):
+            st.markdown(cleaned_text)
 
 st.divider()
 
