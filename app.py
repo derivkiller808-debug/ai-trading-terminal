@@ -25,14 +25,13 @@ client = genai.Client(api_key=API_KEY)
 # --- SYMBOLS LIST ---
 symbol_list = ["BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
 
-# --- SESSION STATE (For Auto-Fill) ---
-if 'auto_entry' not in st.session_state: st.session_state.auto_entry = ""
-if 'auto_sl' not in st.session_state: st.session_state.auto_sl = ""
-if 'auto_tp' not in st.session_state: st.session_state.auto_tp = ""
-# FIXED: Set the default to the full symbol string
+# --- SESSION STATE (THE FIX: INITIALIZE THE WIDGET KEYS DIRECTLY) ---
+if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
+if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
+if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = symbol_list[0]
 
-# --- PARSING FUNCTION (Robust) ---
+# --- PARSING FUNCTION ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
     entry_match = re.search(r"Entry:\s*([\d.]+)", text, re.IGNORECASE)
@@ -41,7 +40,6 @@ def parse_ai_response(text):
     
     if entry_match and sl_match and tp_match:
         sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
-        # Map AI symbols to our dropdown options
         if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
         elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
@@ -89,17 +87,19 @@ if uploaded_files:
                 chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message([system_prompt, *images])
                 
-            # Store AI text for display
             st.session_state['analysis_result'] = response.text
             
-            # Parse and Auto-Fill
             parsed_data = parse_ai_response(response.text)
             if parsed_data:
+                # THE FIX: Update the WIDGET KEYS directly, not the 'auto' variables
                 st.session_state.auto_symbol = parsed_data['symbol']
-                st.session_state.auto_entry = parsed_data['entry']
-                st.session_state.auto_sl = parsed_data['sl']
-                st.session_state.auto_tp = parsed_data['tp']
+                st.session_state.entry_field = parsed_data['entry']
+                st.session_state.sl_field = parsed_data['sl']
+                st.session_state.tp_field = parsed_data['tp']
+                
                 st.success("✅ Levels detected and auto-filled into calculator below!")
+                # Force Streamlit to completely re-run from top with new values
+                st.rerun()
             else:
                 st.warning("Could not parse exact numbers from AI. Please manually fill the calculator.")
                 
@@ -118,23 +118,22 @@ st.caption("Values fill automatically after analysis. You can manually override 
 
 col1, col2 = st.columns(2)
 with col1:
-    # SAFE INDEXING: This prevents the 'ValueError: list.index(x): x not in list' crash
+    # SAFE INDEXING
     try:
         default_index = symbol_list.index(st.session_state.auto_symbol)
     except ValueError:
-        default_index = 0  # If the value doesn't match, fall back to Bitcoin
+        default_index = 0
     
     instrument = st.selectbox("Select Instrument (Auto-filled by AI)", 
                               symbol_list, 
                               index=default_index)
     
-    # Text inputs allow programmatic auto-fill
-    entry_input = st.text_input("Entry Price", value=st.session_state.auto_entry, key="entry_field")
-    stop_loss_input = st.text_input("Stop Loss", value=st.session_state.auto_sl, key="sl_field")
-    take_profit_input = st.text_input("Take Profit", value=st.session_state.auto_tp, key="tp_field")
+    # THE FIX: Use only the 'key' parameter, remove the 'value' parameter.
+    entry_input = st.text_input("Entry Price", key="entry_field")
+    stop_loss_input = st.text_input("Stop Loss", key="sl_field")
+    take_profit_input = st.text_input("Take Profit", key="tp_field")
 
-# --- AUTOMATIC MATH (Runs on every update, no button needed) ---
-# Convert strings to floats safely
+# --- AUTOMATIC MATH ---
 try:
     entry_price = float(entry_input) if entry_input else 0.0
     stop_loss = float(stop_loss_input) if stop_loss_input else 0.0
@@ -142,11 +141,9 @@ try:
 except ValueError:
     entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
 
-# Determine contract size
 contract_sizes = {"BTCUSD (Bitcoin)": 1.0, "XAUUSD (Gold)": 100.0, "EURUSD (Forex)": 100000.0}
 contract_size = contract_sizes[instrument]
 
-# Only calculate if valid inputs exist
 if entry_price > 0 and stop_loss > 0 and take_profit > 0:
     risk_amount = account_balance * (risk_percent / 100)
     price_diff = abs(entry_price - stop_loss)
@@ -154,7 +151,6 @@ if entry_price > 0 and stop_loss > 0 and take_profit > 0:
     margin_required = (position_size * entry_price) / leverage
     
     raw_lot_size = position_size / contract_size
-    # Floor to nearest 0.01
     lot_size = math.floor(raw_lot_size * 100) / 100
     
     potential_profit = abs(take_profit - entry_price) * position_size
