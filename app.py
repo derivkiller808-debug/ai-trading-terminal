@@ -165,7 +165,7 @@ if uploaded_files:
                         groq_content.append({"type": "image_url", "image_url": {"url": b64}})
                     
                     groq_response = groq_client.chat.completions.create(
-                        model="llama-3.2-11b-vision-preview",  # <--- UPDATED MODEL
+                        model="llama-3.2-90b-vision-preview",  # <--- UPDATED TO 90B
                         messages=[{"role": "user", "content": groq_content}],
                         temperature=0.0
                     )
