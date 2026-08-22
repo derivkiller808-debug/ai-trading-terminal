@@ -20,7 +20,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
+st.caption("Ultimate Accuracy Mode: Triple AI Consensus & Conditional Speculation")
 
 # --- SETUP ---
 try:
@@ -46,10 +46,8 @@ TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT
 def get_usage_count():
     if os.path.exists(USAGE_FILE):
         with open(USAGE_FILE, "r") as f:
-            try:
-                return int(f.read().strip())
-            except:
-                return 0
+            try: return int(f.read().strip())
+            except: return 0
     return 0
 
 def increment_usage():
@@ -68,11 +66,11 @@ def clean_analysis(text):
     text = text.replace("Pricehas", "Price has")
     text = text.replace("Priceis", "Price is")
     text = text.replace("Pricewill", "Price will")
-    text = text.replace("formingalowerhighwick", "forming a lower high wick")
     text = text.replace("4H Trend Analysis:", "\n\n**4H Trend Analysis:**")
     text = text.replace("30M Pattern Analysis:", "\n\n**30M Pattern Analysis:**")
     text = text.replace("5M Sniper Entry:", "\n\n**5M Sniper Entry:**")
     text = text.replace("Final Verdict:", "\n\n**Final Verdict:**")
+    text = text.replace("Speculative Setup:", "\n\n**🚨 SPECULATIVE SETUP:**")
     return text
 
 # --- SYMBOLS & SESSION ---
@@ -114,9 +112,7 @@ with st.sidebar:
     
     st.markdown("### 🧹 Reset App State")
     if st.button("Force Reset Everything"):
-        # Wipe the local file and session state
-        if os.path.exists(USAGE_FILE):
-            os.remove(USAGE_FILE)
+        if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
         st.session_state.clear()
         st.rerun()
     
@@ -127,14 +123,11 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS ---
+# --- AI ANALYSIS (3-VOTE CONSENSUS) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
-        
-        # Force clear the local file right before scanning to avoid any blocking
-        if os.path.exists(USAGE_FILE):
-            os.remove(USAGE_FILE)
+        if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
 
         hasher = hashlib.sha256()
         for file in uploaded_files:
@@ -156,99 +149,138 @@ if uploaded_files:
             except:
                 pass
 
+        # ===== THE "CONDITIONAL SPECULATION" PROMPT =====
         system_prompt = """
-        You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
+        You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
-        I am uploading exactly three screenshots: 4H, 30M, and 5M.
+        You are provided with 3 charts: 4H, 30M, and 5M.
 
-        CRITICAL RULE: Use standard spacing. Ensure there is a space after every word and every period. Never output solid strings of text like "Priceisnow". Always format it as "Price is now".
+        **HARD RULES:**
+        1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
+        2. **CONFLUENCE FILTER:** If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
+        3. **RISK TO REWARD FILTER:** If TP distance is NOT at least 2x SL distance, output NEUTRAL.
+        4. **QUALITY FILTER:** If chart is choppy or unclear, output NEUTRAL.
 
-        **📊 4H Trend Analysis:**
-        Break down the macro bias, structure, and major support or resistance levels (like the red line).
+        **OUTPUT FORMAT:**
+        **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
+        **🧩 30M Pattern Analysis:** (Identify exact pattern or structure).
+        **🎯 5M Sniper Entry:** (Point out exact liquidity grab or order block).
+        **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
+        
+        **IF YOU SAY NEUTRAL:**
+        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict. In this section, describe the exact price action trigger required for a future trade. For example: "If 5M price sweeps 77,300 and leaves a wick rejection, then buy at 77,350 with SL at 77,000 and TP at 78,200." You MUST still fill in the labels below with these specific conditional numbers.
 
-        **🧩 30M Pattern Analysis:**
-        Identify the specific price action pattern (e.g., double top, bull flag, break of structure) and explain what it means.
-
-        **🎯 5M Sniper Entry:**
-        Pinpoint the exact liquidity grab, order block, or rejection wick that confirms the entry.
-
-        **⚖️ Final Verdict:**
-        Conclude clearly with a BUY, SELL, or NEUTRAL recommendation, backed by your expert reasoning.
-
-        **End your response with exactly these labels on new lines (no extra text after them), so my calculator can parse them:**
-
+        **End your response with exactly these labels on new lines (no extra text after them):**
         Symbol:
-        Direction:
-        Entry:
-        Stop Loss:
-        Take Profit:
+        Direction: (BUY, SELL, or NEUTRAL)
+        Entry: (This is the CONDITIONAL trigger price)
+        Stop Loss: (This is the CONDITIONAL stop loss)
+        Take Profit: (This is the CONDITIONAL take profit)
 
         DO NOT calculate lot sizes, leverage, or margin.
         """
-        
+
         success = False
+        votes = []
+        results = []
         error_messages = []
+        raw_texts = []
 
         try:
             images = [Image.open(file) for file in uploaded_files]
-            with st.spinner("Analyzing charts..."):
-                # Loop through every key
-                for i, key in enumerate(KEYS_LIST):
-                    # Mask the key so we don't accidentally post it
-                    masked_key = f"Key {i+1} ({key[:6]}...)"
-                    
+            with st.spinner("Running 3-Vote Accuracy Consensus..."):
+                # Run 3 checks using different keys
+                for i in range(3):
                     try:
+                        key = KEYS_LIST[i]
                         client = genai.Client(api_key=key)
                         chat = client.chats.create(model="gemini-3.6-flash")
                         response = chat.send_message(
                             message=[system_prompt, *images],
                             config=genai.types.GenerateContentConfig(temperature=0.0)
                         )
+                        parsed = parse_ai_response(response.text)
+                        raw_texts.append(response.text)
                         
-                        parsed_data = parse_ai_response(response.text)
-                        
-                        if parsed_data:
+                        if parsed:
+                            results.append(parsed)
+                            votes.append(parsed['direction'])
                             increment_usage()
-                            st.session_state.analysis_result = clean_analysis(response.text)
-                            st.session_state.auto_symbol = parsed_data['symbol']
-                            st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
-                            st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
-                            st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
-
-                            if supabase_connected:
-                                try:
-                                    cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
-                                    supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                                except:
-                                    pass
-
-                            st.success(f"✅ Analysis Complete! (Used {masked_key})")
-                            success = True
-                            st.rerun()
-                            break
+                        else:
+                            error_messages.append(f"AI {i+1} didn't follow strict format.")
                             
                     except Exception as e:
-                        # Capture the error to actually see what's going on
-                        err_str = str(e)
-                        if "429" in err_str:
-                            error_messages.append(f"{masked_key}: LIMIT EXHAUSTED (429)")
-                        elif "400" in err_str:
-                            error_messages.append(f"{masked_key}: BAD KEY FORMAT (400) - Check commas!")
-                        elif "404" in err_str:
-                            error_messages.append(f"{masked_key}: MODEL NOT FOUND (404)")
+                        if "429" in str(e):
+                            error_messages.append(f"Key {i+1} Limit hit, skipping.")
+                            continue
                         else:
-                            error_messages.append(f"{masked_key}: {err_str[:50]}")
+                            error_messages.append(f"Key {i+1} Error: {str(e)[:50]}")
 
-                if not success:
-                    st.error("### 🚫 ALL KEYS LIMIT REACHED")
-                    st.warning("Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.")
+                # THE VOTING LOGIC
+                buy_votes = votes.count("BUY")
+                sell_votes = votes.count("SELL")
+                neutral_votes = votes.count("NEUTRAL")
+
+                final_direction = "NEUTRAL"
+                if buy_votes >= 2: final_direction = "BUY"
+                elif sell_votes >= 2: final_direction = "SELL"
+
+                # CASE 1: CLEAR TRADE (2 or 3 AIs agree on BUY/SELL)
+                if final_direction != "NEUTRAL":
+                    winning_results = [r for r in results if r['direction'] == final_direction]
+                    avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
+                    avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
+                    avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
+                    sym = winning_results[0]['symbol']
+
+                    st.session_state.analysis_result = f"**AI Consensus (3-Vote {final_direction})**\n\nSymbol: {sym}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
+                    st.session_state.auto_symbol = sym
+                    st.session_state.entry_field = f"{avg_entry:.2f}"
+                    st.session_state.sl_field = f"{avg_sl:.2f}"
+                    st.session_state.tp_field = f"{avg_tp:.2f}"
+
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except:
+                            pass
+
+                    st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
+                    st.rerun()
                     
-                    # This will show you EXACTLY what happened!
+                # CASE 2: NEUTRAL - PROVIDE SPECULATIVE ANALYSIS
+                else:
+                    # Show the text from the first successful AI
+                    if raw_texts:
+                        st.session_state.analysis_result = clean_analysis(raw_texts[0])
+                        spec_levels = results[0] if results else None
+                        
+                        st.warning("### 🛑 NO ACTIVE TRADE - Speculative Setup Only")
+                        st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **speculative setup** below. Wait for these conditions to be met before considering a trade.")
+                        
+                        with st.container(border=True):
+                            st.markdown(st.session_state.analysis_result)
+                        
+                        if spec_levels:
+                            st.markdown(f"""
+**🚨 Speculative Trigger Levels:**
+- **Symbol:** {spec_levels['symbol']}
+- **Trigger Direction:** {spec_levels['direction']}
+- **Trigger Entry:** {spec_levels['entry']}
+- **Trigger Stop Loss:** {spec_levels['sl']}
+- **Trigger Take Profit:** {spec_levels['tp']}
+""")
+                            st.info("These are NOT active trades. Only enter if the market reaches the entry level and confirms the direction. You can manually type these into the calculator below when triggered.")
+                    else:
+                        st.warning("### 🛑 NO TRADE - No Speculative Analysis Available")
+                        st.warning("The AI could not even generate a speculative setup. It is safer to skip this chart entirely.")
+                    
                     st.divider()
-                    st.subheader("🔍 Diagnostics (Read this!)")
+                    st.subheader("🔍 Diagnostics (For debugging)")
                     for msg in error_messages:
                         st.write(msg)
-                
+
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
@@ -259,7 +291,7 @@ if uploaded_files:
 
 st.divider()
 
-# --- AUTO-FILLING MULTI-SYMBOL CALCULATOR (FIXED) ---
+# --- AUTO-FILLING MULTI-SYMBOL CALCULATOR ---
 st.subheader("🧮 Auto-Calculating Precision Calculator")
 st.caption("Values fill automatically after analysis. You can manually override them.")
 
