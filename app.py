@@ -89,7 +89,7 @@ if uploaded_files:
                 # Using the guaranteed available model
                 chat = client.chats.create(model="gemini-2.5-flash")
                 response = chat.send_message(
-                    contents=[system_prompt, *images],
+                    message=[system_prompt, *images],
                     config=genai.types.GenerateContentConfig(temperature=0.0)
                 )
                 
