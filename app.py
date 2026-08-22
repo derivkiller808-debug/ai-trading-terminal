@@ -132,7 +132,7 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
-                chat = client.chats.create(model="gemini-1.5-flash")
+                chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message(
                     message=[system_prompt, *images],
                     config=genai.types.GenerateContentConfig(temperature=0.0)
