@@ -22,14 +22,15 @@ st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk."
 API_KEY = st.secrets.get("GEMINI_API_KEY", "PASTE_YOUR_KEY_HERE")
 client = genai.Client(api_key=API_KEY)
 
-# --- SYMBOLS LIST ---
-symbol_list = ["BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
+# --- NEW SYMBOL LIST (Includes a Placeholder) ---
+placeholder = "Select Instrument..."
+symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
 
-# --- SESSION STATE (THE FIX: INITIALIZE THE WIDGET KEYS DIRECTLY) ---
+# --- SESSION STATE (Initialize to Placeholder) ---
 if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
 if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
 if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
-if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = symbol_list[0]
+if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 
 # --- PARSING FUNCTION ---
 def parse_ai_response(text):
@@ -40,12 +41,13 @@ def parse_ai_response(text):
     
     if entry_match and sl_match and tp_match:
         sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
+        # Map AI symbols to our full dropdown options
         if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
         elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
         
         return {
-            'symbol': sym,
+            'symbol': sym, # This maps directly to the option in symbol_options
             'entry': entry_match.group(1),
             'sl': sl_match.group(1),
             'tp': tp_match.group(1)
@@ -91,15 +93,14 @@ if uploaded_files:
             
             parsed_data = parse_ai_response(response.text)
             if parsed_data:
-                # THE FIX: Update the WIDGET KEYS directly, not the 'auto' variables
+                # Auto-fill session states
                 st.session_state.auto_symbol = parsed_data['symbol']
                 st.session_state.entry_field = parsed_data['entry']
                 st.session_state.sl_field = parsed_data['sl']
                 st.session_state.tp_field = parsed_data['tp']
                 
                 st.success("✅ Levels detected and auto-filled into calculator below!")
-                # Force Streamlit to completely re-run from top with new values
-                st.rerun()
+                st.rerun() # Forces the dropdown to update
             else:
                 st.warning("Could not parse exact numbers from AI. Please manually fill the calculator.")
                 
@@ -118,60 +119,62 @@ st.caption("Values fill automatically after analysis. You can manually override 
 
 col1, col2 = st.columns(2)
 with col1:
-    # SAFE INDEXING
+    # Safe index lookup (Defaults to 0 if none selected yet)
     try:
-        default_index = symbol_list.index(st.session_state.auto_symbol)
+        default_index = symbol_options.index(st.session_state.auto_symbol)
     except ValueError:
         default_index = 0
     
     instrument = st.selectbox("Select Instrument (Auto-filled by AI)", 
-                              symbol_list, 
+                              symbol_options, 
                               index=default_index)
     
-    # THE FIX: Use only the 'key' parameter, remove the 'value' parameter.
     entry_input = st.text_input("Entry Price", key="entry_field")
     stop_loss_input = st.text_input("Stop Loss", key="sl_field")
     take_profit_input = st.text_input("Take Profit", key="tp_field")
 
-# --- AUTOMATIC MATH ---
-try:
-    entry_price = float(entry_input) if entry_input else 0.0
-    stop_loss = float(stop_loss_input) if stop_loss_input else 0.0
-    take_profit = float(take_profit_input) if take_profit_input else 0.0
-except ValueError:
-    entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
+# --- AUTOMATIC MATH (Guarded so it doesn't run without an instrument) ---
+if instrument == placeholder:
+    st.info("Select an instrument to start calculating after analysis.")
+else:
+    try:
+        entry_price = float(entry_input) if entry_input else 0.0
+        stop_loss = float(stop_loss_input) if stop_loss_input else 0.0
+        take_profit = float(take_profit_input) if take_profit_input else 0.0
+    except ValueError:
+        entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
 
-contract_sizes = {"BTCUSD (Bitcoin)": 1.0, "XAUUSD (Gold)": 100.0, "EURUSD (Forex)": 100000.0}
-contract_size = contract_sizes[instrument]
+    contract_sizes = {"BTCUSD (Bitcoin)": 1.0, "XAUUSD (Gold)": 100.0, "EURUSD (Forex)": 100000.0}
+    contract_size = contract_sizes[instrument]
 
-if entry_price > 0 and stop_loss > 0 and take_profit > 0:
-    risk_amount = account_balance * (risk_percent / 100)
-    price_diff = abs(entry_price - stop_loss)
-    position_size = risk_amount / price_diff
-    margin_required = (position_size * entry_price) / leverage
-    
-    raw_lot_size = position_size / contract_size
-    lot_size = math.floor(raw_lot_size * 100) / 100
-    
-    potential_profit = abs(take_profit - entry_price) * position_size
-    rr_ratio = (abs(take_profit - entry_price)) / (price_diff)
-    
-    st.success("--- LIVE RESULTS (Auto-Calculated) ---")
-    st.write(f"💼 **Account:** ${account_balance:,.2f} | **Lev:** {leverage:.0f}x | **Risk:** {risk_percent}% (${risk_amount:.2f})")
-    
-    if lot_size < 0.01:
-        st.error(f"⚠️ Risk amount (${risk_amount:.2f}) is too small for a 0.01 minimum lot. Please increase risk % or increase Stop Loss distance.")
-    else:
-        st.markdown(f"### 📊 Trade **{lot_size:.2f} Lots** (Min 0.01)")
-    
-    st.write(f"🏦 **Margin Required:** ${margin_required:,.2f}")
-    st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
-    st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
-    
-    if instrument == "XAUUSD (Gold)":
-        st.info("Gold (XAUUSD) uses 100 oz per lot. The lot size is much smaller than Forex due to the high value per unit.")
-    elif instrument == "EURUSD (Forex)":
-        st.info("Forex uses 100,000 units per lot.")
+    if entry_price > 0 and stop_loss > 0 and take_profit > 0:
+        risk_amount = account_balance * (risk_percent / 100)
+        price_diff = abs(entry_price - stop_loss)
+        position_size = risk_amount / price_diff
+        margin_required = (position_size * entry_price) / leverage
+        
+        raw_lot_size = position_size / contract_size
+        lot_size = math.floor(raw_lot_size * 100) / 100
+        
+        potential_profit = abs(take_profit - entry_price) * position_size
+        rr_ratio = (abs(take_profit - entry_price)) / (price_diff)
+        
+        st.success("--- LIVE RESULTS (Auto-Calculated) ---")
+        st.write(f"💼 **Account:** ${account_balance:,.2f} | **Lev:** {leverage:.0f}x | **Risk:** {risk_percent}% (${risk_amount:.2f})")
+        
+        if lot_size < 0.01:
+            st.error(f"⚠️ Risk amount (${risk_amount:.2f}) is too small for a 0.01 minimum lot. Please increase risk % or increase Stop Loss distance.")
+        else:
+            st.markdown(f"### 📊 Trade **{lot_size:.2f} Lots** (Min 0.01)")
+        
+        st.write(f"🏦 **Margin Required:** ${margin_required:,.2f}")
+        st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
+        st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
+        
+        if instrument == "XAUUSD (Gold)":
+            st.info("Gold (XAUUSD) uses 100 oz per lot. The lot size is much smaller than Forex due to the high value per unit.")
+        elif instrument == "EURUSD (Forex)":
+            st.info("Forex uses 100,000 units per lot.")
 
 # --- FOOTER ---
 st.divider()
