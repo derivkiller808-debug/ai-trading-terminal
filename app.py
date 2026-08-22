@@ -187,7 +187,6 @@ if uploaded_files:
         """
         
         success = False
-        last_error = ""
         
         try:
             images = [Image.open(file) for file in uploaded_files]
@@ -222,25 +221,20 @@ if uploaded_files:
                             success = True
                             st.rerun()
                             break
-                        else:
-                            last_error = "AI did not return the exact numbers."
-                            break
                             
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             continue
                         else:
-                            last_error = str(e)
                             break
                             
                 if not success:
                     st.warning("""
                     ### 🚫 ALL KEYS LIMIT REACHED
-                    All 10 keys have been exhausted. 
+                    All keys have been exhausted. 
                     
                     Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
                     """)
-                    st.info(f"Debug Info (For your eyes only): {last_error}")
                 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
@@ -258,7 +252,6 @@ st.caption("Values fill automatically after analysis. You can manually override 
 
 col1, col2 = st.columns(2)
 with col1:
-    # THE AUTO-FILL FIX: Look at the AI's output and select the instrument
     try:
         default_index = symbol_options.index(st.session_state.auto_symbol)
     except (ValueError, AttributeError):
