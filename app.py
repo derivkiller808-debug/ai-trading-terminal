@@ -1,38 +1,47 @@
 import streamlit as st
+import math
 from PIL import Image
 from google import genai
 
-# --- STYLING ---
-st.markdown("""
+# --- STYLING: Dark Terminal + Custom Background ---
+bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
+
+st.markdown(f"""
 <style>
-    .stApp { background-color: #0e1117; }
-    h1, h2, h3 { color: #00ff88 !important; font-family: 'Courier New', monospace; }
-    .stButton>button { background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; }
-    .stNumberInput>div>div>input { background-color: #1a1f2e; color: white; }
+    .stApp {{
+        background-image: url("{bg_url}");
+        background-size: cover;
+        background-color: #0e1117;
+    }}
+    h1, h2, h3, h4 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
+    .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; }}
+    .stNumberInput>div>div>input {{ background-color: #1a1f2e; color: white; }}
+    .stFileUploader {{ background-color: rgba(20, 20, 20, 0.8); border: 1px solid #00ff88; border-radius: 10px; }}
+    footer {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload screenshots, and let the 'Top Trader' AI analyze the pattern and calculate your exact risk.")
+st.caption("Upload multiple screenshots. The 'Top Trader' AI analyzes the pattern and calculates your exact risk.")
 
 # --- API KEY ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", "PASTE_YOUR_KEY_HERE")
 client = genai.Client(api_key=API_KEY)
 
-# --- SIDEBAR ---
+# --- SIDEBAR (With Your Exact Requirements) ---
 with st.sidebar:
     st.header("⚙️ Risk Management Dashboard")
-    account_balance = st.number_input("Account Balance ($)", min_value=100.0, value=10000.0, step=100.0)
-    leverage = st.number_input("Leverage (e.g., 10, 50, 100)", min_value=1.0, value=10.0, step=1.0)
-    risk_percent = st.slider("Risk Per Trade (%)", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+    account_balance = st.number_input("Account Balance ($)", min_value=1.0, value=1000.0, step=10.0)
+    leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
+    risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
     
     st.divider()
-    st.subheader("📈 Chart Upload")
-    uploaded_files = st.file_uploader("Upload Chart Screenshots", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+    st.subheader("📈 Upload Charts")
+    uploaded_files = st.file_uploader("Upload Multiple Charts (1m, 5m, 15m, 4h)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
 st.divider()
 
-# --- AI ANALYSIS ---
+# --- AI ANALYSIS (Persistent Result) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     
@@ -56,21 +65,23 @@ if uploaded_files:
             images = [Image.open(file) for file in uploaded_files]
             
             with st.spinner("Analyzing charts and calculating probabilities..."):
-                # UPDATED: Use Chat.send_message to suppress the warning
                 chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message([system_prompt, *images])
                 
-            st.success("Analysis Complete:")
-            st.markdown(response.text)
+            st.session_state['analysis_result'] = response.text
             
         except Exception as e:
-            st.error(f"Error running AI. Check your API Key or model limit. {e}")
+            st.error(f"Error running AI: {e}")
+
+    if 'analysis_result' in st.session_state:
+        st.success("Analysis Complete:")
+        st.markdown(st.session_state['analysis_result'])
 
 st.divider()
 
-# --- POSITION SIZING ---
+# --- POSITION SIZING (With 0.01 Lot Logic) ---
 st.subheader("🧮 Precision Position Sizing Calculator")
-st.caption("Once the AI gives you your Entry and Stop Loss, plug them in below to see exactly how much to trade.")
+st.caption("Enter Entry and SL from the AI. Lots are strictly in 0.01 increments (Minimum 0.01).")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -87,18 +98,29 @@ if st.button("Calculate Position Size"):
     price_diff = abs(entry_price - stop_loss)
     position_size = risk_amount / price_diff
     margin_required = (position_size * entry_price) / leverage
-    lot_size = position_size / contract_size
+    
+    raw_lot_size = position_size / contract_size
+    lot_size = math.floor(raw_lot_size * 100) / 100
+    
     potential_profit = abs(take_profit - entry_price) * position_size
     rr_ratio = (abs(take_profit - entry_price)) / (price_diff)
     
     st.success("--- CALCULATION RESULTS ---")
     st.write(f"💰 **Account Balance:** ${account_balance:,.2f}")
-    st.write(f"⚠️ **Risk Amount (at {risk_percent}%):** ${risk_amount:,.2f}")
+    st.write(f"⚠️ **Risk Amount (at {risk_percent}% of balance):** ${risk_amount:,.2f}")
     st.write(f"📉 **Distance to SL:** {price_diff:,.2f} points")
-    st.markdown(f"### 📊 You should trade: **{position_size:.4f} Units** (or **{lot_size:.2f} Lots**)")
-    st.write(f"🏦 **Margin Required (with {leverage}x leverage):** ${margin_required:,.2f}")
+    
+    if lot_size < 0.01:
+        st.error(f"🚨 IMPORTANT: Your risk amount (${risk_amount:.2f}) is too small to trade the minimum 0.01 lots at this leverage. Increase your risk % or stop loss distance.")
+    else:
+        st.markdown(f"### 📊 You should trade: **{lot_size:.2f} Lots** (Min 0.01, increments 0.01)")
+    
+    st.write(f"🏦 **Margin Required (with {leverage:.0f}x leverage):** ${margin_required:,.2f}")
     st.write(f"🎯 **Potential Profit at TP:** ${potential_profit:,.2f}")
     st.write(f"📈 **Risk-to-Reward Ratio:** 1 : {rr_ratio:.2f}")
-    st.warning("Rule #1: Never risk more than 1-2% per trade. This tool helps you survive the losing streaks.")
-else:
-    st.info("Enter your trade parameters to calculate your exact lot size.")
+    
+    st.warning("Rule #1: Never risk money you can't afford to lose. This tool helps you survive the losing streaks.")
+
+# --- FOOTER ---
+st.divider()
+st.markdown("### **Created by Alex Nderitu**")
