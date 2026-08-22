@@ -20,7 +20,7 @@ st.markdown(f"""
 st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk.")
 
-# --- API SETUP (Graceful Degradation) ---
+# --- API SETUP (Graceful) ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
@@ -28,7 +28,7 @@ except Exception as e:
     st.error(f"❌ Missing GEMINI_API_KEY. Error: {e}")
     st.stop()
 
-# Try to set up Supabase, but if it fails, app still works!
+# Try to set up Supabase, but if it fails, the app still works!
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
@@ -100,18 +100,21 @@ if uploaded_files:
             except:
                 pass # If DB fails, fall back to AI
 
-        # 3. Run AI
+        # 3. The NEW Prompt (Analysis Text + Strict Format)
         system_prompt = """
         You are a top-tier, brilliant technical analyst. I am uploading exactly three charts: 4H, 30M, and 5M.
         Analyze the MACRO TREND on 4H. Find the PRICE ACTION PATTERN on 30M. THEN declare BUY or SELL.
         If neutral, say NEUTRAL.
         
-        STRICTLY output in this exact format:
+        FIRST: Write a concise, 3-4 sentence professional breakdown explaining exactly what you see on the 4H trend and the 30M pattern.
+        
+        THEN: At the very end, output the exact trade levels in this strict format:
         Symbol: XAUUSD (or BTCUSD or EURUSD)
         Direction: SELL
         Entry: 2450.50
         Stop Loss: 2460.00
         Take Profit: 2400.00
+        
         DO NOT calculate lot sizes, leverage, or margin.
         """
         
