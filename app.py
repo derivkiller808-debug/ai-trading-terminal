@@ -22,19 +22,12 @@ st.markdown(f"""
 st.title("🧠 The Brilliant Trader's AI Terminal")
 st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
 
-# --- SETUP (The Anti-Stuck Logic) ---
+# --- SETUP ---
 try:
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",") if k.strip()]
     if len(KEYS_LIST) == 0:
         st.error("❌ No keys found! Please check Settings -> Secrets.")
         st.stop()
-    
-    # ANTI-STUCK: If the index is out of bounds, reset it to 0 automatically!
-    if 'current_key_index' not in st.session_state or st.session_state.current_key_index >= len(KEYS_LIST):
-        st.session_state.current_key_index = 0
-        
-    API_KEY = KEYS_LIST[st.session_state.current_key_index]
-    client = genai.Client(api_key=API_KEY)
 except Exception as e:
     st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}")
     st.stop()
@@ -85,10 +78,6 @@ def clean_analysis(text):
 # --- SYMBOLS & SESSION ---
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
-if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
-if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
-if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
-if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
 # --- PARSING ---
@@ -117,8 +106,7 @@ with st.sidebar:
     
     st.divider()
     
-    total_keys = len(KEYS_LIST)
-    st.markdown(f"⚙️ **Active Keys Loaded:** {total_keys}")
+    st.markdown(f"⚙️ **Active Keys Loaded:** {len(KEYS_LIST)}")
     
     current_usage = get_usage_count()
     remaining = max(0, TOTAL_LIMIT - current_usage)
@@ -128,9 +116,10 @@ with st.sidebar:
     st.markdown(f"**Used:** {current_usage} / {TOTAL_LIMIT}")
     st.markdown(f"**Remaining:** {remaining} scans")
     
-    # Backup reset button
-    if st.button("🔄 Force Reset Session"):
-        st.session_state.clear()
+    # Master Reset Button
+    if st.button("🧹 Reset Usage Counter"):
+        if os.path.exists(USAGE_FILE):
+            os.remove(USAGE_FILE)
         st.rerun()
     
     st.divider()
@@ -140,20 +129,18 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (Automatic Key Rotation, No Stuck Index) ---
+# --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
-        # Double-check anti-stuck logic before running
-        if st.session_state.current_key_index >= len(KEYS_LIST):
-            st.session_state.current_key_index = 0
-            
+        # 1. Calculate Hash
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
+        # 2. Check Supabase Cache
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -169,6 +156,7 @@ if uploaded_files:
             except:
                 pass
 
+        # 3. The "Legendary 50-Year Master Trader" Prompt
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
@@ -199,18 +187,23 @@ if uploaded_files:
         DO NOT calculate lot sizes, leverage, or margin.
         """
         
+        # 4. The Master Key Loop (Automatically finds the first working key)
+        success = False
+        last_error = ""
+        
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
-                for i in range(len(KEYS_LIST)):
-                    API_KEY = KEYS_LIST[st.session_state.current_key_index]
-                    client = genai.Client(api_key=API_KEY)
+                # Iterate through keys WITHOUT getting stuck on index
+                for i, key in enumerate(KEYS_LIST):
                     try:
+                        client = genai.Client(api_key=key)
                         chat = client.chats.create(model="gemini-3.6-flash")
                         response = chat.send_message(
                             message=[system_prompt, *images],
                             config=genai.types.GenerateContentConfig(temperature=0.0)
                         )
+                        
                         parsed_data = parse_ai_response(response.text)
                         
                         if parsed_data:
@@ -228,29 +221,30 @@ if uploaded_files:
                                 except:
                                     pass
 
-                            st.success(f"✅ Analysis Complete! (Used Key {st.session_state.current_key_index + 1})")
+                            st.success(f"✅ Analysis Complete! (Used Key {i + 1})")
+                            success = True
                             st.rerun()
+                            break
                         else:
-                            st.error("❌ AI did not return the exact numbers. Check the output format.")
-                            st.stop()
+                            last_error = "AI did not return the exact numbers."
+                            break
                             
                     except Exception as e:
+                        # If 429, move to the next key!
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            st.session_state.current_key_index += 1
-                            # If we go out of bounds, reset to 0 and break the loop
-                            if st.session_state.current_key_index >= len(KEYS_LIST):
-                                st.session_state.current_key_index = 0
-                                st.warning("""
-                                ### 🚫 ALL KEYS LIMIT REACHED
-                                You have exhausted all loaded API keys. 
-                                
-                                Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
-                                """)
-                                st.stop()
-                            else:
-                                continue
+                            continue
                         else:
-                            raise e
+                            last_error = str(e)
+                            break
+                            
+                if not success:
+                    st.warning("""
+                    ### 🚫 ALL KEYS LIMIT REACHED
+                    All 10 keys have been exhausted. 
+                    
+                    Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
+                    """)
+                    st.info(f"Debug Info (For your eyes only): {last_error}")
                 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
@@ -268,12 +262,7 @@ st.caption("Values fill automatically. You can manually override them.")
 
 col1, col2 = st.columns(2)
 with col1:
-    try:
-        default_index = symbol_options.index(st.session_state.auto_symbol)
-    except ValueError:
-        default_index = 0
-    
-    instrument = st.selectbox("Select Instrument", symbol_options, index=default_index)
+    instrument = st.selectbox("Select Instrument", symbol_options, index=0)
     entry_input = st.text_input("Entry Price", key="entry_field")
     stop_loss_input = st.text_input("Stop Loss", key="sl_field")
     take_profit_input = st.text_input("Take Profit", key="tp_field")
