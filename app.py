@@ -150,10 +150,10 @@ if uploaded_files:
                     # --- FALL BACK TO GROQ (Free & Unlimited) ---
                     st.info("Groq Scanning...")
                     
-                    # Convert images to Base64 for Groq (Fixed RGBA issue)
+                    # Convert images to Base64 for Groq
                     base64_images = []
                     for img in images:
-                        img = img.convert("RGB")  # <--- FIX: Converts PNG/RGBA to RGB
+                        img = img.convert("RGB")
                         buffered = BytesIO()
                         img.save(buffered, format="JPEG")
                         base64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -164,8 +164,9 @@ if uploaded_files:
                     for b64 in base64_images:
                         groq_content.append({"type": "image_url", "image_url": {"url": b64}})
                     
+                    # UPDATED TO THE CURRENT, SUPPORTED LLAMA 4 MODEL
                     groq_response = groq_client.chat.completions.create(
-                        model="llama-3.2-90b-vision-preview",  # <--- UPDATED TO 90B
+                        model="llama-4-scout-17b-16e-instruct",
                         messages=[{"role": "user", "content": groq_content}],
                         temperature=0.0
                     )
