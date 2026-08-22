@@ -7,88 +7,28 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (FINAL COMPREHENSIVE DARK MODE) ---
+# --- STYLING (FINAL DARK MODE) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
-    /* Force background and text color */
-    .stApp {{
-        background-image: url("{bg_url}");
-        background-size: cover;
-        background-color: #0e1117 !important;
-    }}
-
-    /* Sidebar */
-    [data-testid="stSidebar"] {{
-        background-color: #0e1117 !important;
-        border-right: 1px solid #2d313e;
-    }}
-
-    /* Headers */
-    h1, h2, h3, h4, h5, h6 {{
-        color: #00ff88 !important;
-        font-family: 'Courier New', monospace;
-    }}
-
-    /* Main text */
-    p, li, span, label, div {{
-        color: #f0f2f6 !important;
-    }}
-
-    /* Text Inputs, Number Inputs, Select Boxes */
-    input, textarea, [data-baseweb="select"] > div {{
-        background-color: #1a1f2e !important;
-        color: #ffffff !important;
-        border-color: #00ff88 !important;
-    }}
-
-    /* Buttons */
-    .stButton>button {{
-        background-color: #00ff88;
-        color: #000;
-        font-weight: bold;
-        border-radius: 5px;
-        border: none;
-    }}
-    .stButton>button:hover {{
-        background-color: #00cc6e;
-        color: #000;
-    }}
-
-    /* File Uploader */
-    [data-testid="stFileUploader"] {{
-        background-color: #1a1f2e !important;
-        border: 1px solid #00ff88;
-        border-radius: 10px;
-        padding: 10px;
-    }}
-
-    /* Containers and Borders */
-    [data-testid="stVerticalBlockBorderWrapper"] {{
-        background-color: #141722 !important;
-        border-color: #00ff88 !important;
-        border-radius: 10px;
-        padding: 10px;
-    }}
-
-    /* Progress Bars */
-    .stProgress > div > div > div > div {{
-        background-color: #00ff88 !important;
-    }}
-
-    /* Hide footer default text, replace with our own */
+    .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
+    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
+    h2, h3, h4, h5, h6 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
+    p, li, span, label, div {{ color: #f0f2f6 !important; }}
+    input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00ff88 !important; }}
+    .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; border: none; }}
+    .stButton>button:hover {{ background-color: #00cc6e; color: #000; }}
+    [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00ff88; border-radius: 10px; padding: 10px; }}
+    [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #00ff88 !important; border-radius: 10px; padding: 10px; }}
+    .stProgress > div > div > div > div {{ background-color: #00ff88 !important; }}
     footer {{visibility: hidden;}}
-
-    /* Force word wrap inside borders */
-    [data-testid="stMarkdownContainer"] {{
-        word-break: break-word;
-        overflow-wrap: anywhere;
-    }}
+    [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Ultimate Accuracy Mode: Triple AI Consensus & Conditional Speculation")
+# --- HEADER (DIRECT HTML INJECTION - GUARANTEED GREEN) ---
+st.markdown("<h1 style='color: #00ff88; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
+st.markdown("<p style='color: #00ff88; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -379,6 +319,11 @@ else:
         st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
         st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
 
-# --- FOOTER ---
+# --- FOOTER (DIRECT HTML INJECTION - GUARANTEED GREEN) ---
 st.divider()
-st.markdown("### **Created by Alex Nderitu**\n\n**Whatsapp +254759914001 for Further Assistance.**")
+st.markdown("""
+<div style="color: #00ff88; text-align: center; font-family: 'Courier New', monospace;">
+    <h3 style="color: #00ff88;">Created by Alex Nderitu</h3>
+    <p style="color: #00ff88;">Whatsapp +254759914001 for Further Assistance.</p>
+</div>
+""", unsafe_allow_html=True)
