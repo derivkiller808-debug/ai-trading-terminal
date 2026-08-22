@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (THE "FORCE" FIX) ---
+# --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -15,25 +15,30 @@ st.markdown(f"""
     h1, h2, h3, h4 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
     .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; }}
     footer {{visibility: hidden;}}
-    /* THIS LINE FORCES THE TEXT TO STAY INSIDE THE BOX */
-    [data-testid="stMarkdownContainer"] {{
-        word-break: break-word;
-        overflow-wrap: anywhere;
-    }}
+    [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.")
+st.caption("Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Auto-Key Rotation.")
 
-# --- SETUP ---
+# --- SETUP (Key Pool Logic) ---
 try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
+    # Get the list of keys from Secrets (comma separated)
+    KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",")]
+    
+    # Initialize or get the current key index from session state
+    if 'current_key_index' not in st.session_state:
+        st.session_state.current_key_index = 0
+    
+    API_KEY = KEYS_LIST[st.session_state.current_key_index]
     client = genai.Client(api_key=API_KEY)
+    
 except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
+    st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets (separate with commas). Error: {e}")
     st.stop()
 
+# Try to set up Supabase, but if it fails, the app still works!
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
@@ -62,39 +67,26 @@ def increment_usage():
         f.write(str(count + 1))
     return count + 1
 
-# --- THE "CLEANER" FIX (Inserts spaces where the AI forgot them) ---
+# --- TEXT CLEANER (Fixes messy AI formatting) ---
 def clean_analysis(text):
-    # 1. Fix random spaces between numbers
     text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
-    # 2. Fix random spaces between letters
     text = re.sub(r'(?<=\w)\s+(?=\w)', ' ', text)
-    # 3. Collapse multiple spaces
     text = re.sub(r'\s+', ' ', text).strip()
-    
-    # 4. Fix missing spaces after periods (formingalowerhighwick.Price -> forming a lower high wick. Price)
     text = re.sub(r'\.(?=[A-Z])', '. ', text)
-    # 5. Fix missing spaces between lower/upper case (wordNext -> word Next)
     text = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', text)
-    
-    # 6. Fix the specific glitches you mentioned
     text = text.replace("Pricehas", "Price has")
     text = text.replace("Priceis", "Price is")
     text = text.replace("Pricewill", "Price will")
     text = text.replace("formingalowerhighwick", "forming a lower high wick")
-    
-    # 7. Add clean line breaks before headers
     text = text.replace("4H Trend Analysis:", "\n\n**4H Trend Analysis:**")
     text = text.replace("30M Pattern Analysis:", "\n\n**30M Pattern Analysis:**")
     text = text.replace("5M Sniper Entry:", "\n\n**5M Sniper Entry:**")
     text = text.replace("Final Verdict:", "\n\n**Final Verdict:**")
-    
     return text
 
-# --- SYMBOLS ---
+# --- SYMBOLS & SESSION ---
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
-
-# --- SESSION STATE ---
 if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
 if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
 if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
@@ -127,24 +119,17 @@ with st.sidebar:
     
     st.divider()
     
+    total_keys = len(KEYS_LIST)
+    st.markdown(f"⚙️ **Active Key Rotation:** {total_keys} keys loaded")
+    
     current_usage = get_usage_count()
-    if st.session_state.limit_reached:
-        current_usage = DAILY_LIMIT
     remaining = max(0, DAILY_LIMIT - current_usage)
     
-    st.markdown("### 📊 Daily Scan Limit")
-    
-    if st.session_state.limit_reached or remaining == 0:
-        st.error("🚫 **LIMIT REACHED**")
-        st.progress(1.0)
-    else:
-        st.progress(current_usage / DAILY_LIMIT)
-        
+    st.markdown("### 📊 Daily Scan Limit (Per Key)")
+    st.progress(current_usage / DAILY_LIMIT)
     st.markdown(f"**Used:** {current_usage} / {DAILY_LIMIT}")
     st.markdown(f"**Remaining:** {remaining} scans")
-    
-    if st.session_state.limit_reached:
-        st.caption("Contact Authdev for License Activation")
+    st.caption("When one key hits 20, the app automatically switches to the next key!")
     
     st.divider()
     
@@ -153,16 +138,17 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS ---
+# --- AI ANALYSIS (Automatic Key Rotation) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         
-        if get_usage_count() >= DAILY_LIMIT or st.session_state.limit_reached:
+        # Check if ALL keys are exhausted
+        if st.session_state.current_key_index >= len(KEYS_LIST):
             st.session_state.limit_reached = True
             st.warning("""
-            ### 🚫 Daily Limit Reached
-            You have reached your daily scan limit of 20 charts. 
+            ### 🚫 ALL KEYS LIMIT REACHED
+            You have exhausted all loaded API keys. 
             
             Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
             """)
@@ -173,6 +159,7 @@ if uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
 
+        # Check Supabase Cache
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -188,13 +175,12 @@ if uploaded_files:
             except:
                 pass
 
-        # THE "PREVENTION" FIX (Updated Prompt)
         system_prompt = """
         You are a legendary, highly profitable and exceptionally skilled trader with over 50 years of experience. You are a master of every trading strategy, concept, and psychological principle known to mankind.
 
         I am uploading exactly three screenshots: 4H, 30M, and 5M.
 
-        CRITICAL RULE: Use standard spacing. Ensure there is a space after every word and every period. Never output solid strings of text like "Priceisnow". Always format it as "Price is now". Use a new line and a blank line before each section.
+        CRITICAL RULE: Use standard spacing. Ensure there is a space after every word and every period. Never output solid strings of text like "Priceisnow". Always format it as "Price is now".
 
         **📊 4H Trend Analysis:**
         Break down the macro bias, structure, and major support or resistance levels (like the red line).
@@ -221,48 +207,62 @@ if uploaded_files:
         
         try:
             images = [Image.open(file) for file in uploaded_files]
+            
             with st.spinner("Analyzing charts..."):
-                chat = client.chats.create(model="gemini-3.6-flash")
-                response = chat.send_message(
-                    message=[system_prompt, *images],
-                    config=genai.types.GenerateContentConfig(temperature=0.0)
-                )
-                
-                parsed_data = parse_ai_response(response.text)
-                
-                if parsed_data:
-                    increment_usage()
-                    
-                    st.session_state.analysis_result = clean_analysis(response.text)
-                    st.session_state.auto_symbol = parsed_data['symbol']
-                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
-                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
-                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
+                # AUTO KEY ROTATION LOOP
+                for i in range(len(KEYS_LIST)):
+                    # Re-assign client based on current index
+                    API_KEY = KEYS_LIST[st.session_state.current_key_index]
+                    client = genai.Client(api_key=API_KEY)
+                    try:
+                        chat = client.chats.create(model="gemini-3.6-flash")
+                        response = chat.send_message(
+                            message=[system_prompt, *images],
+                            config=genai.types.GenerateContentConfig(temperature=0.0)
+                        )
+                        parsed_data = parse_ai_response(response.text)
+                        
+                        if parsed_data:
+                            increment_usage()
+                            st.session_state.analysis_result = clean_analysis(response.text)
+                            st.session_state.auto_symbol = parsed_data['symbol']
+                            st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
+                            st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
+                            st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except:
-                            pass
+                            if supabase_connected:
+                                try:
+                                    cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
+                                    supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                                except:
+                                    pass
 
-                    st.success("✅ Analysis Complete! (Locked to this image)")
-                    st.rerun()
-                else:
-                    st.error("❌ AI did not return the exact numbers. Check the output format.")
+                            st.success(f"✅ Analysis Complete! (Used Key {st.session_state.current_key_index + 1})")
+                            st.rerun()
+                        else:
+                            st.error("❌ AI did not return the exact numbers. Check the output format.")
+                            st.stop()
+                            
+                    except Exception as e:
+                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                            st.session_state.current_key_index += 1
+                            if st.session_state.current_key_index >= len(KEYS_LIST):
+                                st.session_state.limit_reached = True
+                                st.warning("""
+                                ### 🚫 ALL KEYS LIMIT REACHED
+                                You have exhausted all loaded API keys. 
+                                
+                                Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
+                                """)
+                                st.stop()
+                            else:
+                                # It will automatically loop and try the next key!
+                                continue
+                        else:
+                            raise e
                 
         except Exception as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                st.session_state.limit_reached = True
-                st.warning("""
-                ### 🚫 Daily Limit Reached
-                You have reached your daily scan limit of 20 charts. 
-                
-                Contact authdev Alex Nderitu via Whatsapp **+254759914001** for License Activation.
-                """)
-                st.rerun()
-            else:
-                st.error(f"❌ AI Error: {e}")
+            st.error(f"❌ AI Error: {e}")
 
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
