@@ -7,15 +7,83 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING ---
+# --- STYLING (FINAL COMPREHENSIVE DARK MODE) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
-    .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117; }}
-    h1, h2, h3, h4 {{ color: #00ff88 !important; font-family: 'Courier New', monospace; }}
-    .stButton>button {{ background-color: #00ff88; color: #000; font-weight: bold; border-radius: 5px; }}
+    /* Force background and text color */
+    .stApp {{
+        background-image: url("{bg_url}");
+        background-size: cover;
+        background-color: #0e1117 !important;
+    }}
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {{
+        background-color: #0e1117 !important;
+        border-right: 1px solid #2d313e;
+    }}
+
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {{
+        color: #00ff88 !important;
+        font-family: 'Courier New', monospace;
+    }}
+
+    /* Main text */
+    p, li, span, label, div {{
+        color: #f0f2f6 !important;
+    }}
+
+    /* Text Inputs, Number Inputs, Select Boxes */
+    input, textarea, [data-baseweb="select"] > div {{
+        background-color: #1a1f2e !important;
+        color: #ffffff !important;
+        border-color: #00ff88 !important;
+    }}
+
+    /* Buttons */
+    .stButton>button {{
+        background-color: #00ff88;
+        color: #000;
+        font-weight: bold;
+        border-radius: 5px;
+        border: none;
+    }}
+    .stButton>button:hover {{
+        background-color: #00cc6e;
+        color: #000;
+    }}
+
+    /* File Uploader */
+    [data-testid="stFileUploader"] {{
+        background-color: #1a1f2e !important;
+        border: 1px solid #00ff88;
+        border-radius: 10px;
+        padding: 10px;
+    }}
+
+    /* Containers and Borders */
+    [data-testid="stVerticalBlockBorderWrapper"] {{
+        background-color: #141722 !important;
+        border-color: #00ff88 !important;
+        border-radius: 10px;
+        padding: 10px;
+    }}
+
+    /* Progress Bars */
+    .stProgress > div > div > div > div {{
+        background-color: #00ff88 !important;
+    }}
+
+    /* Hide footer default text, replace with our own */
     footer {{visibility: hidden;}}
-    [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
+
+    /* Force word wrap inside borders */
+    [data-testid="stMarkdownContainer"] {{
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
