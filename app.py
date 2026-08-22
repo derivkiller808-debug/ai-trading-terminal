@@ -1,10 +1,8 @@
 import streamlit as st
 import math
 import re
-import hashlib
 from PIL import Image
 from google import genai
-from supabase import create_client, Client
 
 # --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
@@ -18,15 +16,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.title("🧠 The Brilliant Trader's AI Terminal")
-st.caption("Upload 4H, 30M, 5M. AI analyzes price; Engine auto-calculates risk.")
+st.caption("Failsafe Debug Mode - Upload 4H, 30M, 5M.")
 
-# --- SETUP ---
+# --- API SETUP (No Supabase, just Gemini) ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
-    supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"Missing Secrets: {e}")
+    st.error(f"❌ Missing GEMINI_API_KEY in Settings -> Secrets. Error: {e}")
     st.stop()
 
 # --- SYMBOLS LIST ---
@@ -47,7 +44,7 @@ def parse_ai_response(text):
     entry_match = re.search(r"Entry:\s*([\d.]+)", text, re.IGNORECASE)
     sl_match = re.search(r"Stop Loss:\s*([\d.]+)", text, re.IGNORECASE)
     tp_match = re.search(r"Take Profit:\s*([\d.]+)", text, re.IGNORECASE)
-
+    
     if entry_match and sl_match and tp_match:
         sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
         if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
@@ -68,34 +65,19 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (SINGLE MODEL - THE ONE THAT WORKED) ---
+# --- THE BUTTON ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
-        hasher = hashlib.sha256()
-        for file in uploaded_files:
-            hasher.update(file.getvalue())
-        image_hash = hasher.hexdigest()
-
-        # 1. Check Supabase cache
-        try:
-            response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
-            if response.data:
-                cached = response.data[0]['result']
-                st.session_state.analysis_result = cached['text']
-                st.session_state.auto_symbol = cached['symbol']
-                st.session_state.entry_field = cached['entry']
-                st.session_state.sl_field = cached['sl']
-                st.session_state.tp_field = cached['tp']
-                st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
-                st.rerun()
-        except Exception:
-            pass
-
+        # 1. Confirm the button was actually clicked!
+        st.write("✅ Button clicked! Starting AI...")
+        
+        # 2. System Prompt
         system_prompt = """
         You are a top-tier, brilliant technical analyst. I am uploading exactly three charts: 4H, 30M, and 5M.
         Analyze the MACRO TREND on 4H. Find the PRICE ACTION PATTERN on 30M. THEN declare BUY or SELL.
         If neutral, say NEUTRAL.
+        
         STRICTLY output in this exact format:
         Symbol: XAUUSD (or BTCUSD or EURUSD)
         Direction: SELL
@@ -108,40 +90,37 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing charts..."):
+                # Use the model that worked before
                 chat = client.chats.create(model="gemini-3.6-flash")
                 response = chat.send_message(
                     message=[system_prompt, *images],
                     config=genai.types.GenerateContentConfig(temperature=0.0)
                 )
                 
-                # *** DEBUG BLOCK: SHOW THE RAW AI RESPONSE ***
-                st.subheader("Debug: Raw AI Output")
+                # *** THIS IS WHERE THE DEBUG BOX WILL NOW APPEAR ***
+                st.markdown("### **Debug: Raw AI Output**")
                 st.code(response.text, language="text")
                 
+                # 3. Parse the response
                 parsed_data = parse_ai_response(response.text)
                 
                 if parsed_data:
+                    # Auto-fill
                     st.session_state.analysis_result = response.text
                     st.session_state.auto_symbol = parsed_data['symbol']
                     st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
                     st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
                     st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
-
-                    # Save to Supabase
-                    try:
-                        cache_data = {'text': response.text, 'symbol': parsed_data['symbol'], 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
-                        supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                    except:
-                        pass
-
-                    st.success("✅ Analysis Complete!")
+                    
+                    st.success("✅ Analysis Complete! Auto-filled below.")
                     st.rerun()
                 else:
-                    st.error("❌ Could not parse the AI's numbers. Please look at the Debug Raw AI Output above. The AI may have missed the exact 'Entry: 2450.50' format.")
-                
+                    st.warning("⚠️ The AI responded, but it didn't follow the exact 'Entry: 2450.50' format above. Please copy the text from the Debug box and tell me!")
+
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
+    # Display previous results if available
     if 'analysis_result' in st.session_state:
         st.success("AI Analysis Summary:")
         st.markdown(st.session_state['analysis_result'])
