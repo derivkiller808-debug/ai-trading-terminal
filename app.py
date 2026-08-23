@@ -59,12 +59,15 @@ try:
 except:
     supabase_connected = False
 
-# --- USER TRACKING ---
+# --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
 cookies = CookieController()
+
+# Try to get existing ID from cookie, if none, generate one and save it permanently
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
     device_id = "device-" + str(uuid.uuid4())
-    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)
+    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)  # 1 year in seconds
+
 st.session_state.session_id = device_id
 
 if 'total_users' not in st.session_state: st.session_state.total_users = 0
@@ -74,40 +77,20 @@ def track_visit():
     if supabase_connected:
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
+            # Upsert (same device gets same row - stays 1 user forever)
             supabase.table('app_visits').upsert({'session_id': st.session_state.session_id, 'last_seen': now_iso}).execute()
+            
             total = supabase.table('app_visits').select('*', count='exact').execute()
             st.session_state.total_users = total.count
+            
+            # Active 24h
             active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
-        except:
-            pass
+        except Exception as e:
+            st.warning(f"Tracking issue: {e}")
 
 track_visit()
-
-# --- SYMBOL INVENTORY (NEW) ---
-if 'inventory' not in st.session_state: st.session_state.inventory = []
-
-def load_inventory():
-    if supabase_connected:
-        try:
-            response = supabase.table('symbol_inventory').select('symbol').execute()
-            st.session_state.inventory = [row['symbol'] for row in response.data]
-        except:
-            pass
-
-def update_inventory(new_symbols):
-    if supabase_connected:
-        for sym in new_symbols:
-            if sym and sym not in st.session_state.inventory:
-                st.session_state.inventory.append(sym)
-                try:
-                    supabase.table('symbol_inventory').upsert({'symbol': sym, 'last_scanned': datetime.now(timezone.utc).isoformat()}).execute()
-                except:
-                    pass
-
-# Initialize inventory
-load_inventory()
 
 # --- USAGE COUNTER LOGIC ---
 USAGE_FILE = "usage_count.txt"
@@ -144,42 +127,31 @@ def clean_analysis(text):
     text = text.replace("Speculative Setup:", "\n\n**🚨 SPECULATIVE SETUP:**")
     return text
 
-# --- PARSING (NEW: Handles Multiple Symbols) ---
-def parse_multi_ai_response(text):
-    # Split by "Symbol:" markers to handle multiple symbols
-    blocks = re.split(r'(?=Symbol:)', text)
-    results = []
-    for block in blocks:
-        if not block.strip():
-            continue
-        symbol_match = re.search(r"Symbol:\s*([A-Z]+)", block, re.IGNORECASE)
-        validation_match = re.search(r"Validation:\s*(ACCEPTED|REJECT)", block, re.IGNORECASE)
-        direction_match = re.search(r"Direction:\s*(BUY|SELL|NEUTRAL)", block, re.IGNORECASE)
-        entry_match = re.search(r"Entry:\s*([\d.]+)", block, re.IGNORECASE)
-        sl_match = re.search(r"Stop Loss:\s*([\d.]+)", block, re.IGNORECASE)
-        tp_match = re.search(r"Take Profit:\s*([\d.]+)", block, re.IGNORECASE)
-        
-        if symbol_match:
-            sym = symbol_match.group(1).upper()
-            if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
-            elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
-            else: sym = "BTCUSD (Bitcoin)"
-            
-            result = {
-                'symbol': sym,
-                'validation': validation_match.group(1).upper() if validation_match else 'REJECT',
-                'direction': direction_match.group(1).upper() if direction_match else 'NEUTRAL',
-                'entry': float(entry_match.group(1)) if entry_match else None,
-                'sl': float(sl_match.group(1)) if sl_match else None,
-                'tp': float(tp_match.group(1)) if tp_match else None,
-                'raw_text': block.strip()
-            }
-            results.append(result)
-    return results
-
 # --- SYMBOLS & SESSION ---
 placeholder = "Select Instrument..."
 symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (Forex)"]
+if 'entry_field' not in st.session_state: st.session_state.entry_field = ""
+if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
+if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
+if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
+if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
+
+# --- PARSING ---
+def parse_ai_response(text):
+    symbol_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
+    direction_match = re.search(r"Direction:\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
+    entry_match = re.search(r"Entry:\s*([\d.]+)", text, re.IGNORECASE)
+    sl_match = re.search(r"Stop Loss:\s*([\d.]+)", text, re.IGNORECASE)
+    tp_match = re.search(r"Take Profit:\s*([\d.]+)", text, re.IGNORECASE)
+    
+    if entry_match and sl_match and tp_match:
+        sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
+        if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
+        elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
+        else: sym = "BTCUSD (Bitcoin)"
+        direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
+        return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
+    return None
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -194,24 +166,16 @@ with st.sidebar:
     st.divider()
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
-    st.markdown("### 📦 Symbol Inventory")
-    if st.session_state.inventory:
-        for sym in st.session_state.inventory:
-            st.markdown(f"- {sym}")
-    else:
-        st.caption("No symbols detected yet. Upload charts to build inventory.")
-    st.divider()
     st.subheader("📈 Upload Charts")
-    uploaded_files = st.file_uploader("Upload Charts (Multiple of 3 per symbol)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
 st.divider()
 
-# --- AI ANALYSIS (3-VOTE CONSENSUS & MULTI-SYMBOL) ---
+# --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
-        
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
@@ -232,38 +196,40 @@ if uploaded_files:
             except:
                 pass
 
-        # MULTI-SYMBOL PROMPT
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
-        You are provided with multiple screenshots of charts. Each symbol has exactly 3 charts: 4H, 30M, and 5M.
+
+        You are provided with 3 charts: 4H, 30M, and 5M.
+
+        **HARD RULES:**
+        1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
+        2. **CONFLUENCE FILTER:** If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
+        3. **RISK TO REWARD FILTER:** If TP distance is NOT at least 2x SL distance, output NEUTRAL.
+        4. **QUALITY FILTER:** If chart is choppy or unclear, output NEUTRAL.
+
+        **OUTPUT FORMAT:**
+        **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
+        **🧩 30M Pattern Analysis:** (Identify exact pattern or structure).
+        **🎯 5M Sniper Entry:** (Point out exact liquidity grab or order block).
+        **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
         
-        **Step 1: DETECT & VALIDATE**
-        - Identify the Symbol for each chart (look for ticker labels like BTCUSD, XAUUSD, EURUSD).
-        - Group the charts by symbol.
-        - For each group, validate:
-           1. Are all 3 timeframes (4H, 30M, 5M) present? If not, mark as REJECT.
-           2. Are the timeframe and symbol clearly visible on the chart? If not, mark as REJECT.
-           3. Is the chart properly zoomed out for a wider view? If not, mark as REJECT.
-        - If any group is rejected, output: Symbol: [symbol], Validation: REJECT, Reason: [reason]
+        **IF YOU SAY NEUTRAL:**
+        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
         
-        **Step 2: ANALYSIS (Only for accepted symbols)**
-        For each accepted symbol:
-        1. TREND FILTER: Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
-        2. CONFLUENCE FILTER: If 4H, 30M, 5M do not agree, output NEUTRAL.
-        3. RISK TO REWARD FILTER: If TP distance is not at least 2x SL distance, output NEUTRAL.
-        4. QUALITY FILTER: If chart is choppy or unclear, output NEUTRAL.
-        
-        **Step 3: OUTPUT FORMAT (For each symbol)**
-        Symbol: [Symbol]
-        Validation: ACCEPTED or REJECT
-        Direction: BUY, SELL, or NEUTRAL
-        Entry: [value]
-        Stop Loss: [value]
-        Take Profit: [value]
-        
-        **IF NEUTRAL (and accepted):**
-        Provide a speculative setup in the exact format: "Buy when [condition 1] AND [condition 2] AND [condition 3] occur" or "Sell when...". List three individual occurrences. State clearly: "If all three occur simultaneously, it is a high-probability setup."
-        
+        **CRITICAL REQUIREMENT:**
+        List the **THREE (3) individual occurrences** that would support an entry. These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
+        - Example: (1) If price sweeps 77,300, (2) If a wick rejection forms on the 5M chart, (3) If the 30M trend begins to shift bullish.
+        - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
+
+        **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels.
+
+        **End your response with exactly these labels on new lines (no extra text after them):**
+        Symbol:
+        Direction: (BUY, SELL, or NEUTRAL)
+        Entry: (Leave blank if NEUTRAL)
+        Stop Loss: (Leave blank if NEUTRAL)
+        Take Profit: (Leave blank if NEUTRAL)
+
         DO NOT calculate lot sizes, leverage, or margin.
         """
 
@@ -284,122 +250,97 @@ if uploaded_files:
                             message=[system_prompt, *images],
                             config=genai.types.GenerateContentConfig(temperature=0.0)
                         )
-                        parsed_batch = parse_multi_ai_response(response.text)
-                        
-                        # Store raw text for display
+                        parsed = parse_ai_response(response.text)
                         raw_texts.append(response.text)
                         
-                        # Aggregate votes/results for each symbol
-                        for parsed in parsed_batch:
-                            if parsed['validation'] == 'ACCEPTED':
-                                results.append(parsed)
-                                votes.append(parsed['direction'])
-                                increment_usage()
+                        if parsed:
+                            results.append(parsed)
+                            votes.append(parsed['direction'])
+                            increment_usage()
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             continue
                         else:
                             continue
 
-                # Update inventory with detected symbols
-                detected_symbols = [r['symbol'] for r in results]
-                update_inventory(detected_symbols)
-                
-                # Determine final directions (majority vote)
-                final_batch = []
                 buy_votes = votes.count("BUY")
                 sell_votes = votes.count("SELL")
-                # For simplicity, if we have a majority overall, we apply it; but user wants per-symbol
-                # We'll just use the first result's direction (since multiple symbols is rare) or aggregate per symbol
-                # For MVP: Display the raw output and auto-fill if only one symbol is detected
-                
-                if len(results) == 1:
-                    # Single symbol detected - proceed with auto-fill
-                    final_direction = "NEUTRAL"
-                    if buy_votes >= 2: final_direction = "BUY"
-                    elif sell_votes >= 2: final_direction = "SELL"
+                final_direction = "NEUTRAL"
+                if buy_votes >= 2: final_direction = "BUY"
+                elif sell_votes >= 2: final_direction = "SELL"
+
+                if final_direction != "NEUTRAL":
+                    winning_results = [r for r in results if r['direction'] == final_direction]
+                    avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
+                    avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
+                    avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
+                    sym = winning_results[0]['symbol']
+
+                    st.session_state.analysis_result = f"**AI Consensus (3-Vote {final_direction})**\n\nSymbol: {sym}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
+                    st.session_state.auto_symbol = sym
+                    st.session_state.entry_field = f"{avg_entry:.2f}"
+                    st.session_state.sl_field = f"{avg_sl:.2f}"
+                    st.session_state.tp_field = f"{avg_tp:.2f}"
+
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except:
+                            pass
+
+                    st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
+                    st.rerun()
                     
-                    if final_direction != "NEUTRAL":
-                        winning_results = [r for r in results if r['direction'] == final_direction]
-                        avg_entry = sum(r['entry'] for r in winning_results if r['entry']) / len(winning_results)
-                        avg_sl = sum(r['sl'] for r in winning_results if r['sl']) / len(winning_results)
-                        avg_tp = sum(r['tp'] for r in winning_results if r['tp']) / len(winning_results)
-                        sym = winning_results[0]['symbol']
-
-                        st.session_state.analysis_result = f"**AI Consensus (3-Vote {final_direction})**\n\nSymbol: {sym}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
-                        st.session_state.auto_symbol = sym
-                        st.session_state.entry_field = f"{avg_entry:.2f}"
-                        st.session_state.sl_field = f"{avg_sl:.2f}"
-                        st.session_state.tp_field = f"{avg_tp:.2f}"
-
-                        if supabase_connected:
-                            try:
-                                cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
-                                supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                            except:
-                                pass
-
-                        st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
-                        st.rerun()
-                        
-                    else:
-                        # NEUTRAL
-                        if raw_texts:
-                            full_text = clean_analysis(raw_texts[0])
-                            split_marker = "🚨 SPECULATIVE SETUP:"
-                            if split_marker in full_text:
-                                main_analysis, spec_part = full_text.split(split_marker, 1)
-                            else:
-                                main_analysis, spec_part = full_text, "No speculative setup provided."
-                                
-                            st.markdown(f"""
-                            <div class='gold-warning-box'>
-                                <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                                <div class='gold-warning-text'>The 3 AI models did not reach a clear consensus right now. However, they have provided a speculative setup below. Wait for these conditions to be met before considering a trade.</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            st.markdown(f"""
-                            <div class='analysis-box'>
-                                <div class='analysis-text'>{main_analysis.strip()}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            st.markdown(f"""
-                            <div class='spec-box'>
-                                <div class='spec-header'>🚨 LUXURY SPECULATIVE SETUP</div>
-                                <div class='spec-text'>{spec_part.strip()}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            st.markdown(f"""
-                            <div class='info-box'>
-                                <div class='info-text'>These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.</div>
-                            </div>
-                            """, unsafe_allow_html=True)
                 else:
-                    # Multiple symbols detected
-                    st.warning("### 🛑 MULTIPLE SYMBOLS DETECTED - DISPLAYING RAW RESULTS")
-                    st.warning("Auto-fill is disabled for batch scans. Please review the table below and manually enter the trade you wish to take.")
-                    
-                    # Display results table
-                    table_data = []
-                    for r in results:
-                        if r['validation'] == 'ACCEPTED':
-                            status = r['direction']
-                        else:
-                            status = "REJECTED"
-                        table_data.append([r['symbol'], r['validation'], r['direction'], r['entry'], r['sl'], r['tp']])
-                    
-                    st.table(table_data)
-                    
-                    # Display raw text for further reading
                     if raw_texts:
-                        with st.expander("View Full Analysis"):
-                            st.markdown(clean_analysis(raw_texts[0]))
+                        full_text = clean_analysis(raw_texts[0])
+                        split_marker = "🚨 SPECULATIVE SETUP:"
+                        if split_marker in full_text:
+                            main_analysis, spec_part = full_text.split(split_marker, 1)
+                        else:
+                            main_analysis, spec_part = full_text, "No speculative setup provided."
+                            
+                        st.markdown(f"""
+                        <div class='gold-warning-box'>
+                            <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
+                            <div class='gold-warning-text'>The 3 AI models did not reach a clear consensus right now. However, they have provided a speculative setup below. Wait for these conditions to be met before considering a trade.</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
+                        st.markdown(f"""
+                        <div class='analysis-box'>
+                            <div class='analysis-text'>{main_analysis.strip()}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown(f"""
+                        <div class='spec-box'>
+                            <div class='spec-header'>🚨 LUXURY SPECULATIVE SETUP</div>
+                            <div class='spec-text'>{spec_part.strip()}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown(f"""
+                        <div class='info-box'>
+                            <div class='info-text'>These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class='gold-warning-box'>
+                            <div class='gold-warning-text'>🛑 NO TRADE - No Speculative Analysis Available</div>
+                            <div class='gold-warning-text'>The AI could not even generate a speculative setup. It is safer to skip this chart entirely.</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
+
+    if 'analysis_result' in st.session_state:
+        st.success("AI Analysis Summary:")
+        with st.container(border=True):
+            st.markdown(st.session_state['analysis_result'])
 
 st.divider()
 
@@ -409,9 +350,7 @@ st.caption("Values fill automatically after analysis. You can manually override 
 
 col1, col2 = st.columns(2)
 with col1:
-    # Use default from session or empty
     try:
-        if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
         default_index = symbol_options.index(st.session_state.auto_symbol)
     except (ValueError, AttributeError):
         default_index = 0
