@@ -149,8 +149,8 @@ with st.sidebar:
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
 
-    # --- UPDATED SIDEBAR HEADER ---
-    st.subheader("📈 Upload 3 Charts of 4HR, 30MIN, 5MIN")
+    # --- UPDATED MAIN CAPTION ---
+    st.subheader("📈 Upload 3 Charts : 4HR , 30MIN , 5MIN")
     col1, col2, col3 = st.columns(3)
     with col1: chart1 = st.file_uploader("Chart 1", type=["png", "jpg", "jpeg"], key="chart_1")
     with col2: chart2 = st.file_uploader("Chart 2", type=["png", "jpg", "jpeg"], key="chart_2")
@@ -346,7 +346,6 @@ if uploaded_files:
                         st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
                     else:
-                        # UPDATED: Shows a clear connection error instead of generic message
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
