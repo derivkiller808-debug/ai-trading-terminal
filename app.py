@@ -62,7 +62,6 @@ except:
 # --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
 cookies = CookieController()
 
-# Try to get existing ID from cookie, if none, generate one and save it permanently
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
     device_id = "device-" + str(uuid.uuid4())
@@ -77,18 +76,16 @@ def track_visit():
     if supabase_connected:
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
-            # Upsert (same device gets same row - stays 1 user forever)
             supabase.table('app_visits').upsert({'session_id': st.session_state.session_id, 'last_seen': now_iso}).execute()
             
             total = supabase.table('app_visits').select('*', count='exact').execute()
             st.session_state.total_users = total.count
             
-            # Active 24h
             active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
-        except Exception as e:
-            st.warning(f"Tracking issue: {e}")
+        except:
+            pass
 
 track_visit()
 
@@ -196,6 +193,7 @@ if uploaded_files:
             except:
                 pass
 
+        # UPDATED PROMPT: "Buy when..." instead of "If price..."
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -217,8 +215,8 @@ if uploaded_files:
         You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
         
         **CRITICAL REQUIREMENT:**
-        List the **THREE (3) individual occurrences** that would support an entry. These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
-        - Example: (1) If price sweeps 77,300, (2) If a wick rejection forms on the 5M chart, (3) If the 30M trend begins to shift bullish.
+        List the **THREE (3) individual occurrences** that would support an entry, starting each with **"Buy when..."** (if it's a long setup) or **"Sell when..."** (if it's a short setup). These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
+        - Example: (1) Buy when price sweeps 77,300 and confirms with a wick rejection, (2) Buy when 30M trend shows a shift upward, (3) Buy when an order block is retested.
         - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
         **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels.
