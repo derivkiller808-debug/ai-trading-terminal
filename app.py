@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (DARK MODE, EMERALD GREEN, 0.3 TRANSPARENCY) ---
+# --- STYLING (DARK MODE, EMERALD GREEN HEADERS, DARKER BLUE TEXT) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -17,15 +17,15 @@ st.markdown(f"""
     /* Emerald Green Headers */
     h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
     
-    /* Blue Main Text */
-    p, li, span, label, div {{ color: #00aaff !important; }}
+    /* DARKER BLUE MAIN TEXT (Changed from #00aaff to #0056b3) */
+    p, li, span, label, div {{ color: #0056b3 !important; }}
     
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00E5A0 !important; }}
     
     /* Buttons (0.3 Opacity, 0.5 on Hover) */
     .stButton>button {{
-        background-color: rgba(0, 229, 160, 0.3) !important;  /* Set to 0.3 */
+        background-color: rgba(0, 229, 160, 0.3) !important;
         color: #000 !important;
         font-weight: bold;
         border: 1px solid rgba(0, 229, 160, 0.7) !important;
@@ -33,7 +33,7 @@ st.markdown(f"""
         transition: all 0.2s ease;
     }}
     .stButton>button:hover {{
-        background-color: rgba(0, 229, 160, 0.5) !important;  /* Set to 0.5 on hover */
+        background-color: rgba(0, 229, 160, 0.5) !important;
         border-color: #00E5A0 !important;
     }}
     
@@ -49,9 +49,9 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER (DIRECT HTML INJECTION - EMERALD GREEN) ---
+# --- HEADER (DIRECT HTML INJECTION) ---
 st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #00aaff; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #0056b3; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -174,6 +174,7 @@ if uploaded_files:
             except:
                 pass
 
+        # ===== THE UPDATED "DETAILED SPECULATIVE SETUP" PROMPT =====
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -192,9 +193,15 @@ if uploaded_files:
         **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
         
         **IF YOU SAY NEUTRAL:**
-        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict. 
-        In this section, describe the exact price action trigger required for a future trade in plain English ONLY. 
-        For example: "If 5M price sweeps 77,300 and leaves a wick rejection, then look for a buy entry near 77,350 with a stop loss near 77,000 and a take profit near 78,200."
+        You MUST provide an EXTREMELY DETAILED **🚨 SPECULATIVE SETUP:** section immediately after the verdict. 
+        Write this as a complete step-by-step trade plan in plain English. Include the following:
+        - **📌 Current Condition:** Explain exactly why we are not trading right now (e.g., momentum divergence, waiting for a break of structure).
+        - **🎬 The Trigger Scenario (The "If...Then..."):** Describe the exact price action trigger required for a future trade. (e.g., "If the 5M chart sweeps 77,300 and prints a sharp rejection wick...").
+        - **🎯 The Entry Zone:** State the specific price range to watch for the entry.
+        - **🛑 The Invalidation:** State the exact price where the setup becomes invalid (the Stop Loss).
+        - **🏆 The Target:** State the exact price target once the setup triggers.
+        - **⏳ The Timeframe to Watch:** State which timeframe (5M, 15M, or 1H) to monitor for the trigger.
+
         **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels. The specific numbers are for the analyst to read, not for the calculator to use.
 
         **End your response with exactly these labels on new lines (no extra text after them):**
@@ -268,18 +275,18 @@ if uploaded_files:
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
                     
-                # CASE 2: NEUTRAL - PROVIDE SPECULATIVE ANALYSIS (NO TRIGGER LEVELS)
+                # CASE 2: NEUTRAL - PROVIDE DETAILED SPECULATIVE ANALYSIS
                 else:
                     if raw_texts:
                         st.session_state.analysis_result = clean_analysis(raw_texts[0])
                         
-                        st.warning("### 🛑 NO ACTIVE TRADE - Speculative Setup Only")
-                        st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **speculative setup** below. Wait for these conditions to be met before considering a trade.")
+                        st.warning("### 🛑 NO ACTIVE TRADE - Detailed Speculative Setup")
+                        st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **highly detailed speculative setup** below. Wait for the exact trigger conditions to be met before considering a trade.")
                         
                         with st.container(border=True):
                             st.markdown(st.session_state.analysis_result)
                         
-                        st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.")
+                        st.info("This is NOT an active trade. Monitor the specific timeframe and wait for the exact price action trigger described in the analysis. Only manually enter the levels into the calculator once the setup confirms.")
                     else:
                         st.warning("### 🛑 NO TRADE - No Speculative Analysis Available")
                         st.warning("The AI could not even generate a speculative setup. It is safer to skip this chart entirely.")
