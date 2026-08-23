@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (DARK MODE, EMERALD GREEN, GOLD BUTTON TEXT) ---
+# --- STYLING (DARK MODE, EMERALD GREEN, 0.3 TRANSPARENCY) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -23,18 +23,17 @@ st.markdown(f"""
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00E5A0 !important; }}
     
-    /* Buttons (0.4 Opacity, 0.6 on Hover, GOLD TEXT) */
+    /* Buttons (0.3 Opacity, 0.5 on Hover) */
     .stButton>button {{
-        background-color: rgba(0, 229, 160, 0.4) !important;  /* Set to 0.4 */
-        color: #FFD700 !important;  /* CHANGED TO GOLD */
+        background-color: rgba(0, 229, 160, 0.3) !important;  /* Set to 0.3 */
+        color: #000 !important;
         font-weight: bold;
-        border: 1px solid rgba(0, 229, 160, 0.8) !important;
+        border: 1px solid rgba(0, 229, 160, 0.7) !important;
         border-radius: 5px;
         transition: all 0.2s ease;
     }}
     .stButton>button:hover {{
-        background-color: rgba(0, 229, 160, 0.6) !important;  /* Set to 0.6 on hover */
-        color: #FFD700 !important;  /* Stays Gold on hover */
+        background-color: rgba(0, 229, 160, 0.5) !important;  /* Set to 0.5 on hover */
         border-color: #00E5A0 !important;
     }}
     
