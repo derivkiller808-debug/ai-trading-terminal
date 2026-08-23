@@ -42,7 +42,7 @@ st.markdown(f"""
 
 # --- HEADER ---
 st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Batch Scanner with Validation.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Batch Scanner with Strict Validation.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -138,18 +138,26 @@ def parse_ai_response(text):
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
     return None
 
-# --- PRE-SCAN ---
+# --- STRICT PRE-SCAN (symbol + timeframe + zoom check) ---
 def pre_scan_image_set(images, keys, usage_index):
+    """
+    Sends all 3 images to AI and returns:
+    - symbol (or None if not found)
+    - timeframes (list like ['4H','30M','5M'])
+    - zoom_flags: list of YES/NO for each image
+    Returns (symbol, timeframes, zoom_flags) or (None, None, None) on error.
+    """
     pre_scan_prompt = """
-    You are given 3 charts for the same trading symbol. Identify:
-    1. The **trading symbol** (e.g., BTCUSD, XAUUSD, EURUSD) – look at the top-left corner of any chart.
-    2. The **timeframe** of each chart (e.g., 4H, 30M, 5M) – usually shown in the top-left corner or on the chart itself.
+    You are given 3 screenshots of trading charts (they are all for the same symbol).
+    Analyze each chart and answer:
+    1. Symbol: Is the trading symbol visible (e.g., BTCUSD, XAUUSD, EURUSD)? If yes, give the exact symbol. If not, say "UNKNOWN".
+    2. Timeframes: For each chart, what timeframe is shown? (e.g., 4H, 30M, 5M). If not visible, say "N/A".
+    3. Zoom: For each chart, is the chart zoomed out enough to show a wide view of price action (at least 20-30 candles visible)? Answer YES or NO for each chart.
 
-    Return your answer in **exact** format:
-    Symbol: [SYMBOL]
-    Timeframes: [TF1], [TF2], [TF3]
-
-    Do not include any other text.
+    Return your answer in EXACT format (no other text):
+    Symbol: [SYMBOL or UNKNOWN]
+    Timeframes: [TF1], [TF2], [TF3] (if any are N/A, put N/A)
+    Zoom: [YES/NO], [YES/NO], [YES/NO]  (for chart 1, chart 2, chart 3)
     """
     try:
         key = keys[usage_index % len(keys)]
@@ -160,17 +168,33 @@ def pre_scan_image_set(images, keys, usage_index):
             config=genai.types.GenerateContentConfig(temperature=0.0)
         )
         text = response.text.strip()
-        sym_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
-        symbol = sym_match.group(1).upper() if sym_match else None
+        
+        # Extract symbol
+        sym_match = re.search(r"Symbol:\s*([A-Z]+|UNKNOWN)", text, re.IGNORECASE)
+        symbol_raw = sym_match.group(1).upper() if sym_match else "UNKNOWN"
+        symbol = None if symbol_raw == "UNKNOWN" else symbol_raw
+        
+        # Extract timeframes list
         tf_match = re.search(r"Timeframes:\s*(.+)", text, re.IGNORECASE)
         timeframes = []
         if tf_match:
-            tfs = re.findall(r"\d+[HhMmDdWw]", tf_match.group(1))
+            raw_tfs = tf_match.group(1).strip()
+            tfs = re.findall(r"\d+[HhMmDdWw]|N/A", raw_tfs, re.IGNORECASE)
             timeframes = [tf.upper() for tf in tfs]
-        return symbol, timeframes
+        
+        # Extract zoom flags
+        zoom_match = re.search(r"Zoom:\s*(.+)", text, re.IGNORECASE)
+        zoom_flags = []
+        if zoom_match:
+            raw_zoom = zoom_match.group(1).strip()
+            # Find YES/NO parts
+            parts = re.findall(r"(YES|NO)", raw_zoom, re.IGNORECASE)
+            zoom_flags = [p.upper() for p in parts]
+        
+        return symbol, timeframes, zoom_flags
     except Exception as e:
         st.warning(f"Pre-scan error: {e}")
-        return None, None
+        return None, None, None
 
 # --- SYMBOLS & SESSION ---
 placeholder = "Select Instrument..."
@@ -217,7 +241,7 @@ with st.sidebar:
 
 st.divider()
 
-# --- BATCH DETECTION & VALIDATION ---
+# --- BATCH DETECTION & STRICT VALIDATION ---
 if uploaded_files:
     num_groups = len(uploaded_files) // 3
     remainder = len(uploaded_files) % 3
@@ -228,47 +252,53 @@ if uploaded_files:
     if num_groups == 0:
         st.error("Please upload at least 3 images (1 symbol).")
     else:
-        with st.spinner("Pre-scanning images for symbols and timeframes..."):
+        with st.spinner("Pre-scanning images for symbol, timeframe, and zoom..."):
             detected = []
             for i in range(num_groups):
                 group_files = uploaded_files[i*3 : (i+1)*3]
                 images = [Image.open(f) for f in group_files]
-                symbol, tfs = pre_scan_image_set(images, KEYS_LIST, i)
+                symbol, tfs, zoom_flags = pre_scan_image_set(images, KEYS_LIST, i)
+                
+                # Validation: symbol must be found, timeframes must exactly match required, and zoom must be all YES
+                required_tfs = ['4H', '30M', '5M']
+                is_valid = False
+                if symbol and tfs == required_tfs and zoom_flags == ['YES', 'YES', 'YES']:
+                    is_valid = True
+                    # Save symbol to inventory
+                    if supabase_connected:
+                        try:
+                            supabase.table('symbol_inventory').upsert({'symbol_name': symbol}).execute()
+                            st.session_state.known_symbols.append(symbol)
+                        except:
+                            pass
+                
                 detected.append({
                     'index': i,
                     'symbol': symbol,
                     'timeframes': tfs,
-                    'valid': False,
+                    'zoom_flags': zoom_flags,
+                    'valid': is_valid,
                     'files': group_files
                 })
             
-            required_tfs = ['4H', '30M', '5M']
-            for group in detected:
-                if group['timeframes'] == required_tfs:
-                    group['valid'] = True
-                    if supabase_connected and group['symbol']:
-                        try:
-                            supabase.table('symbol_inventory').upsert({'symbol_name': group['symbol']}).execute()
-                            st.session_state.known_symbols.append(group['symbol'])
-                        except:
-                            pass
-                else:
-                    group['valid'] = False
-            
             st.session_state.detected_groups = detected
         
+        # Display results
         st.subheader("Detection & Validation Results")
         for group in st.session_state.detected_groups:
             sym = group['symbol'] if group['symbol'] else "Unknown"
-            tfs = ", ".join(group['timeframes']) if group['timeframes'] else "Not readable"
-            status = "✅ Valid" if group['valid'] else "❌ Rejected (wrong timeframes)"
-            st.markdown(f"**Group {group['index']+1}:** {sym} – {tfs} → {status}")
+            tfs = ", ".join(group['timeframes']) if group['timeframes'] else "N/A"
+            zoom = ", ".join(group['zoom_flags']) if group['zoom_flags'] else "N/A"
+            status = "✅ Valid" if group['valid'] else "❌ Rejected"
+            st.markdown(f"**Group {group['index']+1}:** {sym} | TF: {tfs} | Zoom: {zoom} → {status}")
         
+        # Check for invalid groups
         invalid_groups = [g for g in st.session_state.detected_groups if not g['valid']]
         if invalid_groups:
-            st.error("❌ Some groups have incorrect timeframes. Please re-upload the correct 4H, 30M, 5M charts for those symbols.")
+            st.error("❌ Some groups were rejected. Reasons may include: missing symbol, missing timeframe, or charts too zoomed in (must show 20+ candles). Please re-upload valid charts for those symbols.")
             st.stop()
         
+        # All valid, proceed to full analysis
         if st.button("🚀 Run Full Analysis on All Valid Groups"):
             st.session_state.batch_results = []
             with st.spinner("Running AI Consensus on all symbols..."):
@@ -310,7 +340,6 @@ if uploaded_files:
                             client = genai.Client(api_key=key)
                             chat = client.chats.create(model="gemini-3.6-flash")
                             
-                            # UPDATED PROMPT: "BUY when/if" or "SELL when/if"
                             system_prompt = """
                             You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
                             
