@@ -3,7 +3,6 @@ import math
 import re
 import os
 import uuid
-import time
 import random
 import hashlib
 from datetime import datetime, timezone, timedelta
@@ -162,7 +161,7 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS ---
+# --- AI ANALYSIS (SINGLE AI - ULTRA FAST) ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
@@ -237,54 +236,42 @@ if uploaded_files:
         """
 
         success = False
-        votes = []
-        results = []
-        raw_texts = []
-        used_key_indices = []
-
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                # Shuffle to hit fresh keys
+                # SHUFFLE KEYS AND FIND THE FIRST WORKING ONE
                 random.shuffle(KEYS_LIST)
-                
-                for key_index in range(len(KEYS_LIST)):
-                    if len(results) >= 3: break
-                    if key_index in used_key_indices: continue
+                ai_text = None
+                last_error = None
 
-                    key = KEYS_LIST[key_index]
-
+                for key in KEYS_LIST:
                     try:
                         client = genai.Client(api_key=key)
                         chat = client.chats.create(model="gemini-3.6-flash")
                         response = chat.send_message(message=[system_prompt, *images], config=genai.types.GenerateContentConfig(temperature=0.0))
-                        
-                        parsed = parse_ai_response(response.text)
-                        raw_texts.append(response.text)
-                        used_key_indices.append(key_index)
-                        
-                        if parsed:
-                            results.append(parsed)
-                            votes.append(parsed['direction'])
-                            increment_usage()
-
-                        # ULTRA FAST: Only 0.1s delay on success
-                        if len(results) < 3:
-                            time.sleep(0.1) 
-
+                        ai_text = response.text
+                        increment_usage()
+                        break
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            used_key_indices.append(key_index)
-                            # ULTRA FAST: Only 0.05s delay on failure
-                            time.sleep(0.05)
+                            last_error = "Rate Limit"
                             continue
                         else:
-                            used_key_indices.append(key_index)
+                            last_error = str(e)
                             continue
 
-                first_raw_text = raw_texts[0] if raw_texts else ""
-                if re.search(r"Validation:\s*FAIL", first_raw_text, re.IGNORECASE):
-                    error_match = re.search(r"Validation Error\(s\):(.*)", first_raw_text, re.IGNORECASE)
+                if ai_text is None:
+                    st.markdown(f"""
+                    <div class='gold-warning-box'>
+                        <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
+                        <div class='gold-warning-text'>All keys are exhausted right now. Please wait 30 seconds and try again.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.stop()
+
+                # CHECK FOR VALIDATION FAILURE
+                if re.search(r"Validation:\s*FAIL", ai_text, re.IGNORECASE):
+                    error_match = re.search(r"Validation Error\(s\):(.*)", ai_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
                     st.markdown(f"""
                     <div class='gold-warning-box'>
@@ -295,56 +282,45 @@ if uploaded_files:
                     """, unsafe_allow_html=True)
                     st.stop()
 
-                buy_votes = votes.count("BUY")
-                sell_votes = votes.count("SELL")
-                final_direction = "NEUTRAL"
-                if buy_votes >= 2: final_direction = "BUY"
-                elif sell_votes >= 2: final_direction = "SELL"
+                parsed_data = parse_ai_response(ai_text)
 
-                if final_direction != "NEUTRAL":
-                    winning_results = [r for r in results if r['direction'] == final_direction]
-                    avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
-                    avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
-                    avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
-                    sym = winning_results[0]['symbol']
+                if parsed_data:
+                    final_direction = parsed_data['direction']
+                    if final_direction != "NEUTRAL":
+                        sym = parsed_data['symbol']
+                        st.session_state.analysis_result = f"**AI Analysis ({final_direction})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
+                        st.session_state.auto_symbol = sym
+                        st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
+                        st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
+                        st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    st.session_state.analysis_result = f"**AI Consensus (3-Vote {final_direction})**\n\nSymbol: {sym}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
-                    st.session_state.auto_symbol = sym
-                    st.session_state.entry_field = f"{avg_entry:.2f}"
-                    st.session_state.sl_field = f"{avg_sl:.2f}"
-                    st.session_state.tp_field = f"{avg_tp:.2f}"
-
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except: pass
-
-                    st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
-                    st.rerun()
-                    
-                else:
-                    if raw_texts:
-                        full_text = clean_analysis(raw_texts[0])
+                        if supabase_connected:
+                            try:
+                                cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
+                                supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                            except: pass
+                        
+                        st.success("✅ Analysis Complete! (Fast Mode)")
+                        st.rerun()
+                    else:
+                        # NEUTRAL - Show Speculative setup
+                        full_text = clean_analysis(ai_text)
                         split_marker = "🚨 SPECULATIVE SETUP:"
                         if split_marker in full_text:
                             main_analysis, spec_part = full_text.split(split_marker, 1)
                         else:
                             main_analysis, spec_part = full_text, "No speculative setup provided."
 
-                        top3_available = False
                         top3_text = spec_part
                         full_list_text = spec_part
-                        
                         if "🔥 TOP 3 SPECULATIVE SETUPS:" in spec_part:
                             full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
                             top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
-                            top3_available = True
 
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                            <div class='gold-warning-text'>The 3 AI models did not reach a clear consensus right now. However, they have provided 10 potential setups below, with the best 3 highlighted.</div>
+                            <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 speculative setups from the 10 listed below.</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -369,14 +345,13 @@ if uploaded_files:
                         
                         st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
-                    else:
-                        st.markdown(f"""
-                        <div class='gold-warning-box'>
-                            <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
-                            <div class='gold-warning-text'>The AI models did not respond. This usually happens when your API keys are temporarily rate-limited or there is a network glitch.</div>
-                            <div class='gold-warning-text'>Please wait 30 seconds and click "Run Top-Trader Analysis" again.</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class='gold-warning-box'>
+                        <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
+                        <div class='gold-warning-text'>The AI did not return clean data. Please try again.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
