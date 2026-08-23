@@ -245,7 +245,7 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                # ULTIMATE SPEED FIX: Shuffle keys so we don't hit exhausted ones first!
+                # Shuffle to hit fresh keys
                 random.shuffle(KEYS_LIST)
                 
                 for key_index in range(len(KEYS_LIST)):
@@ -268,15 +268,15 @@ if uploaded_files:
                             votes.append(parsed['direction'])
                             increment_usage()
 
-                        # Reduced success delay from 4s to 0.8s
+                        # ULTRA FAST: Only 0.1s delay on success
                         if len(results) < 3:
-                            time.sleep(0.8) 
+                            time.sleep(0.1) 
 
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                             used_key_indices.append(key_index)
-                            # Reduced failure delay from 2s to 0.5s
-                            time.sleep(0.5)
+                            # ULTRA FAST: Only 0.05s delay on failure
+                            time.sleep(0.05)
                             continue
                         else:
                             used_key_indices.append(key_index)
