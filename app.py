@@ -46,18 +46,13 @@ st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'
 # --- SETUP ---
 try:
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",") if k.strip()]
-    if len(KEYS_LIST) == 0:
-        st.error("❌ No keys found! Please check Settings -> Secrets.")
-        st.stop()
-except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}")
-    st.stop()
+    if len(KEYS_LIST) == 0: st.error("❌ No keys found! Please check Settings -> Secrets."); st.stop()
+except Exception as e: st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}"); st.stop()
 
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
-except:
-    supabase_connected = False
+except: supabase_connected = False
 
 # --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
 cookies = CookieController()
@@ -67,7 +62,6 @@ if not device_id:
     cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)
 
 st.session_state.session_id = device_id
-
 if 'total_users' not in st.session_state: st.session_state.total_users = 0
 if 'active_users' not in st.session_state: st.session_state.active_users = 0
 
@@ -81,27 +75,22 @@ def track_visit():
             active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
-        except:
-            pass
-
+        except: pass
 track_visit()
 
 # --- USAGE COUNTER LOGIC ---
 USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
 TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT
-
 def get_usage_count():
     if os.path.exists(USAGE_FILE):
         with open(USAGE_FILE, "r") as f:
             try: return int(f.read().strip())
             except: return 0
     return 0
-
 def increment_usage():
     count = get_usage_count()
-    with open(USAGE_FILE, "w") as f:
-        f.write(str(count + 1))
+    with open(USAGE_FILE, "w") as f: f.write(str(count + 1))
     return count + 1
 
 # --- TEXT CLEANER ---
@@ -137,7 +126,6 @@ def parse_ai_response(text):
     entry_match = re.search(r"Entry:\s*([\d.]+)", text, re.IGNORECASE)
     sl_match = re.search(r"Stop Loss:\s*([\d.]+)", text, re.IGNORECASE)
     tp_match = re.search(r"Take Profit:\s*([\d.]+)", text, re.IGNORECASE)
-    
     if entry_match and sl_match and tp_match:
         sym = symbol_match.group(1).upper() if symbol_match else "BTCUSD"
         if sym in ["XAUUSD", "GOLD"]: sym = "XAUUSD (Gold)"
@@ -161,17 +149,13 @@ with st.sidebar:
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
 
-    # --- THREE EXACT UPLOAD SPACES (Not labeled by timeframe) ---
+    # --- THREE EXACT UPLOAD SPACES ---
     st.subheader("📈 Upload 3 Charts")
     col1, col2, col3 = st.columns(3)
-    with col1:
-        chart1 = st.file_uploader("Chart 1", type=["png", "jpg", "jpeg"], key="chart_1")
-    with col2:
-        chart2 = st.file_uploader("Chart 2", type=["png", "jpg", "jpeg"], key="chart_2")
-    with col3:
-        chart3 = st.file_uploader("Chart 3", type=["png", "jpg", "jpeg"], key="chart_3")
+    with col1: chart1 = st.file_uploader("Chart 1", type=["png", "jpg", "jpeg"], key="chart_1")
+    with col2: chart2 = st.file_uploader("Chart 2", type=["png", "jpg", "jpeg"], key="chart_2")
+    with col3: chart3 = st.file_uploader("Chart 3", type=["png", "jpg", "jpeg"], key="chart_3")
     
-    # Combine into a list
     uploaded_files = [x for x in [chart1, chart2, chart3] if x is not None]
 
 st.divider()
@@ -181,7 +165,6 @@ if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
 
-        # STRICT UPLOAD COUNT CHECK (Min: 3, Max: 3)
         if len(uploaded_files) != 3:
             st.markdown(f"""
             <div class='gold-warning-box'>
@@ -194,8 +177,7 @@ if uploaded_files:
 
         if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
         hasher = hashlib.sha256()
-        for file in uploaded_files:
-            hasher.update(file.getvalue())
+        for file in uploaded_files: hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
         
         if supabase_connected:
@@ -210,46 +192,40 @@ if uploaded_files:
                     st.session_state.tp_field = cached['tp']
                     st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
                     st.rerun()
-            except:
-                pass
+            except: pass
 
-        # UPDATED PROMPT: Includes strict validation rules
+        # ===== THE "10 SETUPS, PICK TOP 3" PROMPT =====
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
         You are provided with 3 charts.
 
         **CRITICAL VALIDATION RULES:**
-        Before analyzing, validate the 3 images.
-        1. Do all images have the matching symbol (e.g., all BTCUSD)?
-        2. Are the timeframes clearly 4H, 30M, and 5M?
-        3. Are they zoomed out well for a better view (enough candles to see structure)?
-
+        Before analyzing, validate the 3 images. Do all images have the matching symbol? Are the timeframes clearly 4H, 30M, and 5M? Are they zoomed out well?
         **Output Validation Status at the very top:**
         Validation: PASS  OR  Validation: FAIL
         Validation Error(s): (List reasons if FAIL, otherwise state "None")
 
         **HARD RULES:**
-        1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
-        2. **CONFLUENCE FILTER:** If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
-        3. **RISK TO REWARD FILTER:** If TP distance is NOT at least 2x SL distance, output NEUTRAL.
-        4. **QUALITY FILTER:** If chart is choppy or unclear, output NEUTRAL.
+        Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
+        If 4H, 30M, and 5M do NOT agree, output NEUTRAL.
+        If TP distance is NOT at least 2x SL distance, output NEUTRAL.
+        If chart is choppy or unclear, output NEUTRAL.
 
         **OUTPUT FORMAT:**
         **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
         **🧩 30M Pattern Analysis:** (Identify exact pattern or structure).
         **🎯 5M Sniper Entry:** (Point out exact liquidity grab or order block).
         **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
-        
-        **IF YOU SAY NEUTRAL:**
+
+        **IF YOU SAY NEUTRAL (SPECULATIVE SETUP SECTION):**
         You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
-        
-        **CRITICAL REQUIREMENT:**
-        List the **THREE (3) individual occurrences** that would support an entry, starting each with **"Buy when..."** (if it's a long setup) or **"Sell when..."** (if it's a short setup). These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
-        - Example: (1) Buy when price sweeps 77,300 and confirms with a wick rejection, (2) Buy when 30M trend shows a shift upward, (3) Buy when an order block is retested.
+        - First, brainstorm **EXACTLY TEN (10) individual speculative setups** that could support an entry. Use "Buy when..." or "Sell when..." for each. Number them 1 to 10. They do NOT have to happen all at the same time.
+        - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
+        - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS:**
         - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
-        **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels.
+        **IMPORTANT:** Do NOT include Entry, Stop Loss, or Take Profit labels if your verdict is NEUTRAL. Only include Symbol and Direction: NEUTRAL.
 
         **End your response with exactly these labels on new lines (no extra text after them):**
         Symbol:
@@ -257,8 +233,6 @@ if uploaded_files:
         Entry: (Leave blank if NEUTRAL)
         Stop Loss: (Leave blank if NEUTRAL)
         Take Profit: (Leave blank if NEUTRAL)
-
-        DO NOT calculate lot sizes, leverage, or margin.
         """
 
         success = False
@@ -274,29 +248,21 @@ if uploaded_files:
                         key = KEYS_LIST[i]
                         client = genai.Client(api_key=key)
                         chat = client.chats.create(model="gemini-3.6-flash")
-                        response = chat.send_message(
-                            message=[system_prompt, *images],
-                            config=genai.types.GenerateContentConfig(temperature=0.0)
-                        )
+                        response = chat.send_message(message=[system_prompt, *images], config=genai.types.GenerateContentConfig(temperature=0.0))
                         parsed = parse_ai_response(response.text)
                         raw_texts.append(response.text)
-                        
                         if parsed:
                             results.append(parsed)
                             votes.append(parsed['direction'])
                             increment_usage()
                     except Exception as e:
-                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            continue
-                        else:
-                            continue
+                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e): continue
+                        else: continue
 
-                # CHECK FOR VALIDATION FAILURE from the first AI response
                 first_raw_text = raw_texts[0] if raw_texts else ""
                 if re.search(r"Validation:\s*FAIL", first_raw_text, re.IGNORECASE):
                     error_match = re.search(r"Validation Error\(s\):(.*)", first_raw_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
-                    
                     st.markdown(f"""
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>⚠️ ERROR: Image Validation Failed</div>
@@ -329,8 +295,7 @@ if uploaded_files:
                         try:
                             cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except:
-                            pass
+                        except: pass
 
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
@@ -343,11 +308,21 @@ if uploaded_files:
                             main_analysis, spec_part = full_text.split(split_marker, 1)
                         else:
                             main_analysis, spec_part = full_text, "No speculative setup provided."
-                            
+
+                        # SPLITTING THE FULL 10 LIST FROM THE TOP 3
+                        top3_available = False
+                        top3_text = spec_part
+                        full_list_text = spec_part
+                        
+                        if "🔥 TOP 3 SPECULATIVE SETUPS:" in spec_part:
+                            full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
+                            top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
+                            top3_available = True
+
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                            <div class='gold-warning-text'>The 3 AI models did not reach a clear consensus right now. However, they have provided a speculative setup below. Wait for these conditions to be met before considering a trade.</div>
+                            <div class='gold-warning-text'>The 3 AI models did not reach a clear consensus right now. However, they have provided 10 potential setups below, with the best 3 highlighted.</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -356,19 +331,24 @@ if uploaded_files:
                             <div class='analysis-text'>{main_analysis.strip()}</div>
                         </div>
                         """, unsafe_allow_html=True)
-                        
+
+                        # THE GOLDEN BOX (TOP 3)
                         st.markdown(f"""
                         <div class='spec-box'>
-                            <div class='spec-header'>🚨 LUXURY SPECULATIVE SETUP</div>
-                            <div class='spec-text'>{spec_part.strip()}</div>
+                            <div class='spec-header'>🏆 TOP 3 HIGHEST PROBABILITY SETUPS</div>
+                            <div class='spec-text'>{top3_text.strip()}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # THE INFO BOX (FULL 10 LIST)
+                        st.markdown(f"""
+                        <div class='info-box'>
+                            <div class='info-text'><strong>Full List of 10 Setups for Reference:</strong><br>{full_list_text.strip()}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        st.markdown(f"""
-                        <div class='info-box'>
-                            <div class='info-text'>These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
+
                     else:
                         st.markdown(f"""
                         <div class='gold-warning-box'>
@@ -393,10 +373,8 @@ st.caption("Values fill automatically after analysis. You can manually override 
 
 col1, col2 = st.columns(2)
 with col1:
-    try:
-        default_index = symbol_options.index(st.session_state.auto_symbol)
-    except (ValueError, AttributeError):
-        default_index = 0
+    try: default_index = symbol_options.index(st.session_state.auto_symbol)
+    except (ValueError, AttributeError): default_index = 0
     
     instrument = st.selectbox("Select Instrument (Auto-filled by AI)", symbol_options, index=default_index)
     entry_input = st.text_input("Entry Price", key="entry_field")
@@ -410,8 +388,7 @@ else:
         entry_price = float(entry_input) if entry_input else 0.0
         stop_loss = float(stop_loss_input) if stop_loss_input else 0.0
         take_profit = float(take_profit_input) if take_profit_input else 0.0
-    except:
-        entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
+    except: entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
 
     contract_sizes = {"BTCUSD (Bitcoin)": 1.0, "XAUUSD (Gold)": 100.0, "EURUSD (Forex)": 100000.0}
     contract_size = contract_sizes[instrument]
@@ -427,10 +404,8 @@ else:
 
         st.success("--- LIVE RESULTS ---")
         st.write(f"💼 **Account:** ${account_balance:,.2f} | **Lev:** {leverage:.0f}x | **Risk:** {risk_percent}% (${risk_amount:.2f})")
-        if lot_size < 0.01:
-            st.error(f"⚠️ Risk amount (${risk_amount:.2f}) is too small for 0.01 lots.")
-        else:
-            st.markdown(f"### 📊 Trade **{lot_size:.2f} Lots** (Min 0.01)")
+        if lot_size < 0.01: st.error(f"⚠️ Risk amount (${risk_amount:.2f}) is too small for 0.01 lots.")
+        else: st.markdown(f"### 📊 Trade **{lot_size:.2f} Lots** (Min 0.01)")
         st.write(f"🏦 **Margin Required:** ${margin_required:,.2f}")
         st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
         st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
