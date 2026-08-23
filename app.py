@@ -2,7 +2,9 @@ import streamlit as st
 import math
 import re
 import os
+import uuid
 import hashlib
+from datetime import datetime, timezone, timedelta
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
@@ -13,71 +15,24 @@ st.markdown(f"""
 <style>
     .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
     [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
-
-    /* EMERALD GREEN HEADERS */
     h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
-
-    /* PURPLE MAIN TEXT */
     p, li, span, label, div {{ color: #c084fc !important; }}
-
-    /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #c084fc !important; }}
-
-    /* Buttons - GREEN 50% transparency */
-    .stButton>button {{
-        background-color: rgba(0, 200, 83, 0.5) !important;  /* #00C853 at 50% */
-        color: #000 !important;
-        font-weight: bold;
-        border: 1px solid rgba(0, 200, 83, 0.8) !important;
-        border-radius: 5px;
-        transition: all 0.2s ease;
-    }}
+    .stButton>button {{ background-color: rgba(0, 200, 83, 0.5) !important; color: #000 !important; font-weight: bold; border: 1px solid rgba(0, 200, 83, 0.8) !important; border-radius: 5px; transition: all 0.2s ease; }}
     .stButton>button:hover {{ background-color: rgba(0, 200, 83, 0.7) !important; }}
-
-    /* File Uploader & Containers */
     [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #c084fc !important; border-radius: 10px; padding: 10px; }}
-
-    /* Progress Bars */
     .stProgress > div > div > div > div {{ background-color: #c084fc !important; }}
-
-    /* GLOWING ANALYSIS SPINNER - SOFT GREEN */
-    .stSpinner > div {{
-        box-shadow: 0 0 25px rgba(0, 200, 83, 0.8);
-        border: 2px solid #00C853;
-        border-radius: 50%;
-        animation: pulseGlow 1.5s infinite ease-in-out;
-    }}
-    @keyframes pulseGlow {{
-        0% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }}
-        50% {{ box-shadow: 0 0 30px rgba(0, 200, 83, 0.9); }}
-        100% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }}
-    }}
-
-    /* PURPLE MAIN ANALYSIS BOX */
+    .stSpinner > div {{ box-shadow: 0 0 25px rgba(0, 200, 83, 0.8); border: 2px solid #00C853; border-radius: 50%; animation: pulseGlow 1.5s infinite ease-in-out; }}
+    @keyframes pulseGlow {{ 0% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} 50% {{ box-shadow: 0 0 30px rgba(0, 200, 83, 0.9); }} 100% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} }}
     .analysis-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.3); }}
     .analysis-text {{ color: #d8b4fe !important; line-height: 1.6; font-size: 15px; }}
-
-    /* GOLDEN BROWN WARNING BOX */
     .gold-warning-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center; }}
     .gold-warning-text {{ color: #f9e79f !important; font-weight: bold; font-size: 16px; line-height: 1.5; }}
-
-    /* GOLDEN BROWN LUXURY SPECULATIVE SETUP BOX */
     .spec-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); }}
     .spec-header {{ font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px; font-family: 'Courier New', monospace; }}
     .spec-text {{ color: #f9e79f !important; line-height: 1.6; font-size: 15px; }}
-
-    /* NEW PURPLE INFO BOX (for the note below spec box) */
-    .info-box {{
-        border: 2px solid #c084fc;
-        background: linear-gradient(145deg, #1a1f2e, #2d1b4e);
-        border-radius: 15px;
-        padding: 15px;
-        margin-top: 10px;
-        box-shadow: 0 0 20px rgba(192, 132, 252, 0.4);
-        text-align: left;
-    }}
+    .info-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 15px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.4); text-align: left; }}
     .info-text {{ color: #d8b4fe !important; line-height: 1.5; font-size: 14px; }}
-
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
@@ -102,6 +57,38 @@ try:
     supabase_connected = True
 except:
     supabase_connected = False
+
+# --- NEW: USER TRACKING LOGIC ---
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+# Initialize counters in session state
+if 'total_users' not in st.session_state: st.session_state.total_users = 0
+if 'active_users' not in st.session_state: st.session_state.active_users = 0
+
+def track_visit():
+    if supabase_connected:
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            # Update or create user last seen
+            supabase.table('app_visits').upsert({
+                'session_id': st.session_state.session_id, 
+                'last_seen': now_iso
+            }).execute()
+            
+            # Count total unique users
+            total = supabase.table('app_visits').select('*', count='exact').execute()
+            st.session_state.total_users = total.count
+            
+            # Count active users (last 5 minutes)
+            active_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+            active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
+            st.session_state.active_users = active.count
+        except:
+            pass
+
+# Run tracking once per session load
+track_visit()
 
 # --- USAGE COUNTER LOGIC ---
 USAGE_FILE = "usage_count.txt"
@@ -167,13 +154,22 @@ def parse_ai_response(text):
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Risk Dashboard")
-    # Default balance set to 80.0
     account_balance = st.number_input("Account Balance ($)", min_value=1.0, value=80.0, step=10.0)
     leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
     risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
+    
     st.divider()
+    
+    # NEW: USER STATS DISPLAY
+    st.markdown("### 👥 Community Stats")
+    st.markdown(f"🟢 **Active (5m):** {st.session_state.active_users}")
+    st.markdown(f"👤 **Total Users:** {st.session_state.total_users}")
+    
+    st.divider()
+    
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
+    
     st.subheader("📈 Upload Charts")
     uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
@@ -245,7 +241,7 @@ if uploaded_files:
 
         try:
             images = [Image.open(file) for file in uploaded_files]
-            with st.spinner("Analyzing..."):  # Soft green glow via CSS
+            with st.spinner("Analyzing..."):
                 for i in range(3):
                     try:
                         key = KEYS_LIST[i]
@@ -299,7 +295,7 @@ if uploaded_files:
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
                     
-                # CASE 2: NEUTRAL - GOLD WARNINGS + PURPLE MAIN BOX + GOLDEN SPEC BOX + PURPLE INFO
+                # CASE 2: NEUTRAL
                 else:
                     if raw_texts:
                         full_text = clean_analysis(raw_texts[0])
@@ -309,7 +305,6 @@ if uploaded_files:
                         else:
                             main_analysis, spec_part = full_text, "No speculative setup provided."
                             
-                        # Golden Brown Warning Box
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
@@ -317,14 +312,12 @@ if uploaded_files:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Purple Main Analysis Box
                         st.markdown(f"""
                         <div class='analysis-box'>
                             <div class='analysis-text'>{main_analysis.strip()}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Golden Brown Luxury Spec Box
                         st.markdown(f"""
                         <div class='spec-box'>
                             <div class='spec-header'>🚨 LUXURY SPECULATIVE SETUP</div>
@@ -332,14 +325,12 @@ if uploaded_files:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # NEW PURPLE INFO BOX (instead of st.info)
                         st.markdown(f"""
                         <div class='info-box'>
                             <div class='info-text'>These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.</div>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        # Golden Warning for no analysis
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 NO TRADE - No Speculative Analysis Available</div>
