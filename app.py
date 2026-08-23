@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING ---
+# --- STYLING (PURPLE INFO BOX, SOFT GREEN GLOW, OLIVE BUTTONS) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -23,16 +23,19 @@ st.markdown(f"""
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #c084fc !important; }}
     
-    /* BUTTON - OLIVE GREEN */
-    .stButton>button {{ 
-        background-color: rgba(85, 107, 47, 0.5) !important; /* Olive Green */
-        color: #fff !important; 
-        font-weight: bold; 
-        border: 1px solid rgba(85, 107, 47, 0.9) !important; 
-        border-radius: 5px; 
-        transition: all 0.2s ease; 
+    /* OLIVE GREEN BUTTONS (60% Transparency) */
+    .stButton>button {{
+        background-color: rgba(128, 128, 0, 0.6) !important; /* Olive Green */
+        color: #ffffff !important;
+        font-weight: bold;
+        border: 1px solid rgba(128, 128, 0, 0.8) !important;
+        border-radius: 5px;
+        transition: all 0.2s ease;
     }}
-    .stButton>button:hover {{ background-color: rgba(85, 107, 47, 0.7) !important; }}
+    .stButton>button:hover {{ 
+        background-color: rgba(128, 128, 0, 0.8) !important; 
+        border-color: #808000 !important; 
+    }}
 
     /* File Uploader & Containers */
     [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #c084fc !important; border-radius: 10px; padding: 10px; }}
@@ -40,22 +43,26 @@ st.markdown(f"""
     /* Progress Bars */
     .stProgress > div > div > div > div {{ background-color: #c084fc !important; }}
 
-    /* SOFT GREEN GLOWING ANALYSIS SPINNER */
+    /* SOFT GREEN GLOWING SPINNER */
     .stSpinner > div {{ 
-        box-shadow: 0 0 25px rgba(168, 230, 207, 0.8) !important; 
-        border: 2px solid #a8e6cf !important; 
+        box-shadow: 0 0 25px rgba(144, 238, 144, 0.8); 
+        border: 2px solid #90EE90; 
         border-radius: 50%; 
-        animation: pulseGlowSoftGreen 1.5s infinite ease-in-out; 
+        animation: pulseGlow 1.5s infinite ease-in-out; 
     }}
-    @keyframes pulseGlowSoftGreen {{ 
-        0% {{ box-shadow: 0 0 10px rgba(168, 230, 207, 0.4); }} 
-        50% {{ box-shadow: 0 0 30px rgba(168, 230, 207, 0.9); }} 
-        100% {{ box-shadow: 0 0 10px rgba(168, 230, 207, 0.4); }} 
+    @keyframes pulseGlow {{ 
+        0% {{ box-shadow: 0 0 10px rgba(144, 238, 144, 0.4); }} 
+        50% {{ box-shadow: 0 0 30px rgba(144, 238, 144, 0.9); }} 
+        100% {{ box-shadow: 0 0 10px rgba(144, 238, 144, 0.4); }} 
     }}
 
     /* PURPLE MAIN ANALYSIS BOX */
     .analysis-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.3); }}
     .analysis-text {{ color: #d8b4fe !important; line-height: 1.6; font-size: 15px; }}
+
+    /* PURPLE NOTE BOX (For "These are NOT active trades") */
+    .purple-note-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 15px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.3); }}
+    .purple-note-text {{ color: #d8b4fe !important; line-height: 1.6; font-size: 14px; }}
 
     /* GOLDEN BROWN WARNING BOX */
     .gold-warning-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center; }}
@@ -65,18 +72,6 @@ st.markdown(f"""
     .spec-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); }}
     .spec-header {{ font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px; font-family: 'Courier New', monospace; }}
     .spec-text {{ color: #f9e79f !important; line-height: 1.6; font-size: 15px; }}
-
-    /* PURPLE INFO BOX (Below Luxury Speculative) */
-    .purple-info-box {{
-        border: 2px solid #c084fc;
-        background: linear-gradient(145deg, #1a1f2e, #2d1b4e);
-        border-radius: 10px;
-        padding: 15px;
-        margin-top: 10px;
-        box-shadow: 0 0 20px rgba(192, 132, 252, 0.4);
-        color: #d8b4fe !important;
-        line-height: 1.5;
-    }}
 
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
@@ -244,7 +239,7 @@ if uploaded_files:
 
         try:
             images = [Image.open(file) for file in uploaded_files]
-            with st.spinner("Analyzing..."):  # Soft green glow
+            with st.spinner("Analyzing..."):  # Soft Green glow due to CSS
                 for i in range(3):
                     try:
                         key = KEYS_LIST[i]
@@ -298,7 +293,7 @@ if uploaded_files:
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
                     
-                # CASE 2: NEUTRAL
+                # CASE 2: NEUTRAL - GOLD WARNINGS + PURPLE MAIN BOX + GOLDEN SPEC BOX
                 else:
                     if raw_texts:
                         full_text = clean_analysis(raw_texts[0])
@@ -308,7 +303,7 @@ if uploaded_files:
                         else:
                             main_analysis, spec_part = full_text, "No speculative setup provided."
                             
-                        # Gold Warning Box
+                        # Golden Brown Warning Box
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
@@ -316,14 +311,14 @@ if uploaded_files:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Purple Main Analysis Box
+                        # Main Analysis in Purple Box
                         st.markdown(f"""
                         <div class='analysis-box'>
                             <div class='analysis-text'>{main_analysis.strip()}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Golden Brown Spec Box
+                        # Luxury Speculative Setup in Golden Brown Box
                         st.markdown(f"""
                         <div class='spec-box'>
                             <div class='spec-header'>🚨 LUXURY SPECULATIVE SETUP</div>
@@ -331,14 +326,14 @@ if uploaded_files:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # NEW PURPLE INFO BOX (Replacing the st.info)
+                        # PURPLE NOTE BOX (The "NOT active trades" note)
                         st.markdown(f"""
-                        <div class='purple-info-box'>
-                            These are <b>NOT active trades</b>. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.
+                        <div class='purple-note-box'>
+                            <div class='purple-note-text'>These are NOT active trades. Only enter if the market reaches the exact conditions described in the analysis. You can manually type the levels into the calculator below once the trigger is confirmed.</div>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        # Gold Warning Box
+                        # Golden Brown Warning Box for No Speculative Analysis
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 NO TRADE - No Speculative Analysis Available</div>
