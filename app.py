@@ -39,9 +39,9 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER ---
+# --- HEADER (UPDATED CAPTION) ---
 st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 3 Charts. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 3 Charts of 4HR, 30MIN, 5MIN. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -346,7 +346,6 @@ if uploaded_files:
                         st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
                     else:
-                        # UPDATED: Shows a clear connection error instead of generic message
                         st.markdown(f"""
                         <div class='gold-warning-box'>
                             <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
