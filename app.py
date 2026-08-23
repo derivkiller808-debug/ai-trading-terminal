@@ -58,11 +58,10 @@ try:
 except:
     supabase_connected = False
 
-# --- NEW: USER TRACKING LOGIC ---
+# --- USER TRACKING LOGIC ---
 if 'session_id' not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-# Initialize counters in session state
 if 'total_users' not in st.session_state: st.session_state.total_users = 0
 if 'active_users' not in st.session_state: st.session_state.active_users = 0
 
@@ -70,24 +69,21 @@ def track_visit():
     if supabase_connected:
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
-            # Update or create user last seen
             supabase.table('app_visits').upsert({
                 'session_id': st.session_state.session_id, 
                 'last_seen': now_iso
             }).execute()
             
-            # Count total unique users
             total = supabase.table('app_visits').select('*', count='exact').execute()
             st.session_state.total_users = total.count
             
-            # Count active users (last 5 minutes)
-            active_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+            # CHANGED TO 24 HOURS HERE
+            active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
         except:
             pass
 
-# Run tracking once per session load
 track_visit()
 
 # --- USAGE COUNTER LOGIC ---
@@ -160,9 +156,9 @@ with st.sidebar:
     
     st.divider()
     
-    # NEW: USER STATS DISPLAY
+    # UPDATED TEXT TO 24H
     st.markdown("### 👥 Community Stats")
-    st.markdown(f"🟢 **Active (5m):** {st.session_state.active_users}")
+    st.markdown(f"🟢 **Active (24h):** {st.session_state.active_users}")
     st.markdown(f"👤 **Total Users:** {st.session_state.total_users}")
     
     st.divider()
