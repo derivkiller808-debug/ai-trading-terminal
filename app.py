@@ -4,6 +4,7 @@ import re
 import os
 import uuid
 import time
+import random
 import hashlib
 from datetime import datetime, timezone, timedelta
 from PIL import Image
@@ -239,12 +240,14 @@ if uploaded_files:
         votes = []
         results = []
         raw_texts = []
-        used_key_indices = []  # Track keys used in this run
+        used_key_indices = []
 
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                # SMART LOAD BALANCER: Loop through ALL keys until 3 succeed, with 4s delays!
+                # ULTIMATE SPEED FIX: Shuffle keys so we don't hit exhausted ones first!
+                random.shuffle(KEYS_LIST)
+                
                 for key_index in range(len(KEYS_LIST)):
                     if len(results) >= 3: break
                     if key_index in used_key_indices: continue
@@ -265,17 +268,18 @@ if uploaded_files:
                             votes.append(parsed['direction'])
                             increment_usage()
 
-                        # The key fix for per-minute limits!
+                        # Reduced success delay from 4s to 0.8s
                         if len(results) < 3:
-                            time.sleep(4) 
+                            time.sleep(0.8) 
 
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            used_key_indices.append(key_index) # Skip this key
-                            time.sleep(2)
+                            used_key_indices.append(key_index)
+                            # Reduced failure delay from 2s to 0.5s
+                            time.sleep(0.5)
                             continue
                         else:
-                            used_key_indices.append(key_index) # Skip if error
+                            used_key_indices.append(key_index)
                             continue
 
                 first_raw_text = raw_texts[0] if raw_texts else ""
