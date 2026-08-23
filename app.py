@@ -3,6 +3,7 @@ import math
 import re
 import os
 import uuid
+import time
 import hashlib
 from datetime import datetime, timezone, timedelta
 from PIL import Image
@@ -149,7 +150,7 @@ with st.sidebar:
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
 
-    # --- UPDATED MAIN CAPTION ---
+    # --- THREE UPLOAD SPACES ---
     st.subheader("📈 Upload 3 Charts : 4HR , 30MIN , 5MIN")
     col1, col2, col3 = st.columns(3)
     with col1: chart1 = st.file_uploader("Chart 1", type=["png", "jpg", "jpeg"], key="chart_1")
@@ -238,25 +239,44 @@ if uploaded_files:
         votes = []
         results = []
         raw_texts = []
+        used_key_indices = []  # Track keys used in this run
 
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                for i in range(3):
+                # SMART LOAD BALANCER: Loop through ALL keys until 3 succeed, with 4s delays!
+                for key_index in range(len(KEYS_LIST)):
+                    if len(results) >= 3: break
+                    if key_index in used_key_indices: continue
+
+                    key = KEYS_LIST[key_index]
+
                     try:
-                        key = KEYS_LIST[i]
                         client = genai.Client(api_key=key)
                         chat = client.chats.create(model="gemini-3.6-flash")
                         response = chat.send_message(message=[system_prompt, *images], config=genai.types.GenerateContentConfig(temperature=0.0))
+                        
                         parsed = parse_ai_response(response.text)
                         raw_texts.append(response.text)
+                        used_key_indices.append(key_index)
+                        
                         if parsed:
                             results.append(parsed)
                             votes.append(parsed['direction'])
                             increment_usage()
+
+                        # The key fix for per-minute limits!
+                        if len(results) < 3:
+                            time.sleep(4) 
+
                     except Exception as e:
-                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e): continue
-                        else: continue
+                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                            used_key_indices.append(key_index) # Skip this key
+                            time.sleep(2)
+                            continue
+                        else:
+                            used_key_indices.append(key_index) # Skip if error
+                            continue
 
                 first_raw_text = raw_texts[0] if raw_texts else ""
                 if re.search(r"Validation:\s*FAIL", first_raw_text, re.IGNORECASE):
