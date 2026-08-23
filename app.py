@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
-import streamlit.components.v1 as components
+from streamlit_cookies_controller import CookieController
 
 # --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
@@ -59,25 +59,16 @@ try:
 except:
     supabase_connected = False
 
-# --- NEW: PERMANENT DEVICE TRACKING (LocalStorage) ---
-# Inject JS to get or create a persistent Device ID in the browser
-device_id_js = """
-<script>
-const existingID = localStorage.getItem('brilliant_trader_device_id');
-const deviceID = existingID || 'device-' + Date.now() + '-' + Math.random().toString(16).substr(2, 8);
-localStorage.setItem('brilliant_trader_device_id', deviceID);
-window.parent.postMessage({type: "streamlit:setComponentValue", value: deviceID}, "*");
-</script>
-"""
-device_id_component = components.html(device_id_js, height=0, width=0)
+# --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
+cookies = CookieController()
 
-# Use the persistent ID. If the JS hasn't loaded yet (first millisecond), generate a temporary one.
-if device_id_component:
-    st.session_state.session_id = device_id_component
-else:
-    # Fallback for the very first load if JS hasn't returned yet
-    if 'session_id' not in st.session_state:
-        st.session_state.session_id = str(uuid.uuid4())
+# Try to get existing ID from cookie, if none, generate one and save it permanently
+device_id = cookies.get("brilliant_trader_device_id")
+if not device_id:
+    device_id = "device-" + str(uuid.uuid4())
+    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)  # 1 year in seconds
+
+st.session_state.session_id = device_id
 
 if 'total_users' not in st.session_state: st.session_state.total_users = 0
 if 'active_users' not in st.session_state: st.session_state.active_users = 0
@@ -86,17 +77,19 @@ def track_visit():
     if supabase_connected:
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
-            # Using the persistent Device ID
+            # Upsert (same device gets same row - stays 1 user forever)
             supabase.table('app_visits').upsert({'session_id': st.session_state.session_id, 'last_seen': now_iso}).execute()
+            
             total = supabase.table('app_visits').select('*', count='exact').execute()
             st.session_state.total_users = total.count
+            
+            # Active 24h
             active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
-        except:
-            pass
+        except Exception as e:
+            st.warning(f"Tracking issue: {e}")
 
-# Run tracking
 track_visit()
 
 # --- USAGE COUNTER LOGIC ---
@@ -178,17 +171,16 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (3-VOTE CONSENSUS) ---
+# --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
         if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
-
         hasher = hashlib.sha256()
         for file in uploaded_files:
             hasher.update(file.getvalue())
         image_hash = hasher.hexdigest()
-
+        
         if supabase_connected:
             try:
                 response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
@@ -204,7 +196,6 @@ if uploaded_files:
             except:
                 pass
 
-        # THE UPDATED PROMPT (3 Individual Occurrences)
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -272,14 +263,12 @@ if uploaded_files:
                         else:
                             continue
 
-                # THE VOTING LOGIC
                 buy_votes = votes.count("BUY")
                 sell_votes = votes.count("SELL")
                 final_direction = "NEUTRAL"
                 if buy_votes >= 2: final_direction = "BUY"
                 elif sell_votes >= 2: final_direction = "SELL"
 
-                # CASE 1: CLEAR TRADE
                 if final_direction != "NEUTRAL":
                     winning_results = [r for r in results if r['direction'] == final_direction]
                     avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
@@ -303,7 +292,6 @@ if uploaded_files:
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
                     
-                # CASE 2: NEUTRAL
                 else:
                     if raw_texts:
                         full_text = clean_analysis(raw_texts[0])
