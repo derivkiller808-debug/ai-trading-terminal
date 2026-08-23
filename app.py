@@ -7,23 +7,28 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (DARK MODE, EMERALD GREEN HEADERS, DARKER BLUE TEXT) ---
+# --- STYLING (BLUE & PURPLE GRADIENT + GLOWING BORDERS) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
     .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
-    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
+    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #5a5a7a; }}
     
     /* Emerald Green Headers */
     h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
     
-    /* DARKER BLUE MAIN TEXT (Changed from #00aaff to #0056b3) */
-    p, li, span, label, div {{ color: #0056b3 !important; }}
+    /* BLUE & PURPLE GRADIENT MIX FOR MAIN TEXT */
+    p, li, span, label, div {{ 
+        background: linear-gradient(135deg, #00aaff, #8A2BE2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: #00aaff; /* Fallback for older browsers */
+    }}
     
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #00E5A0 !important; }}
     
-    /* Buttons (0.3 Opacity, 0.5 on Hover) */
+    /* Buttons (0.3 Opacity) */
     .stButton>button {{
         background-color: rgba(0, 229, 160, 0.3) !important;
         color: #000 !important;
@@ -39,19 +44,45 @@ st.markdown(f"""
     
     /* File Uploader & Containers */
     [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #00E5A0 !important; border-radius: 10px; padding: 10px; }}
-    [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #00E5A0 !important; border-radius: 10px; padding: 10px; }}
+    [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #8A2BE2 !important; border-radius: 10px; padding: 10px; }}
     
+    /* THE GLOWING BORDER ANIMATION */
+    @keyframes glow {{
+        0% {{ box-shadow: 0 0 5px #00aaff; }}
+        50% {{ box-shadow: 0 0 25px #8A2BE2; }}
+        100% {{ box-shadow: 0 0 5px #00aaff; }}
+    }}
+    .analyzing-glow {{
+        animation: glow 1s infinite alternate;
+        border: 2px solid #8A2BE2 !important;
+        border-radius: 10px;
+    }}
+
+    /* LUCREATIVE SPECULATIVE SETUP BOX */
+    .spec-box {{
+        background: linear-gradient(135deg, rgba(0, 170, 255, 0.15), rgba(138, 43, 226, 0.15));
+        border: 1px solid #8A2BE2;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
+        margin-top: 10px;
+    }}
+
     /* Progress Bars */
-    .stProgress > div > div > div > div {{ background-color: #00E5A0 !important; }}
+    .stProgress > div > div > div > div {{ background-color: #8A2BE2 !important; }}
     
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER (DIRECT HTML INJECTION) ---
+# --- HEADER (DIRECT HTML INJECTION - EMERALD GREEN) ---
 st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #0056b3; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+st.markdown("<p style='background: linear-gradient(135deg, #00aaff, #8A2BE2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+
+# Initialize Session State for Glowing Effect
+if 'is_analyzing' not in st.session_state:
+    st.session_state.is_analyzing = False
 
 # --- SETUP ---
 try:
@@ -146,214 +177,238 @@ with st.sidebar:
     st.subheader("📈 Upload Charts")
     uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
-st.divider()
+# --- MAIN CONTAINER WITH DYNAMIC GLOW WRAPPER ---
+with st.container():
+    # Apply the glowing border if analyzing
+    if st.session_state.is_analyzing:
+        st.markdown('<div class="analyzing-glow"></div>', unsafe_allow_html=True)
 
-# --- AI ANALYSIS (3-VOTE CONSENSUS) ---
-if uploaded_files:
-    st.subheader("🤖 Multi-Timeframe Analysis")
-    if st.button("Run Top-Trader Analysis"):
-        if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
+    st.divider()
 
-        hasher = hashlib.sha256()
-        for file in uploaded_files:
-            hasher.update(file.getvalue())
-        image_hash = hasher.hexdigest()
+    # --- AI ANALYSIS (3-VOTE CONSENSUS) ---
+    if uploaded_files:
+        st.subheader("🤖 Multi-Timeframe Analysis")
+        if st.button("Run Top-Trader Analysis"):
+            # Trigger Glow
+            st.session_state.is_analyzing = True
+            st.rerun()
+            
+        # Inside the actual logic after rerun:
+        if st.session_state.is_analyzing:
+            if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
 
-        if supabase_connected:
+            hasher = hashlib.sha256()
+            for file in uploaded_files:
+                hasher.update(file.getvalue())
+            image_hash = hasher.hexdigest()
+
+            if supabase_connected:
+                try:
+                    response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
+                    if response.data:
+                        cached = response.data[0]['result']
+                        st.session_state.analysis_result = cached['text']
+                        st.session_state.auto_symbol = cached['symbol']
+                        st.session_state.entry_field = cached['entry']
+                        st.session_state.sl_field = cached['sl']
+                        st.session_state.tp_field = cached['tp']
+                        st.session_state.is_analyzing = False
+                        st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
+                        st.rerun()
+                except:
+                    pass
+
+            system_prompt = """
+            You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience. You are a master of identifying asymmetrical "lucrative" setups.
+
+            You are provided with 3 charts: 4H, 30M, and 5M.
+
+            **HARD RULES:**
+            1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
+            2. **CONFLUENCE FILTER:** If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
+            3. **RISK TO REWARD FILTER:** If TP distance is NOT at least 2x SL distance, output NEUTRAL.
+            4. **QUALITY FILTER:** If chart is choppy or unclear, output NEUTRAL.
+
+            **OUTPUT FORMAT:**
+            **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
+            **🧩 30M Pattern Analysis:** (Identify exact pattern or structure).
+            **🎯 5M Sniper Entry:** (Point out exact liquidity grab or order block).
+            **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
+            
+            **IF YOU SAY NEUTRAL:**
+            You MUST provide a **🚨 SPECULATIVE SETUP** section immediately after the verdict. 
+            Make this section **extremely lucrative, professional, and detailed**. Break it down into 4 sub-sections:
+            - **⚠️ The Trigger:** Describe the *exact* price action scenario required (e.g., "A sharp 5M sweep of the 77,300 high followed by a violent rejection wick off the order block").
+            - **🎯 The Entry:** Exact trigger price.
+            - **🛡️ The Stop:** Exact stop loss price (based on structural invalidation).
+            - **💰 The Target:** Exact take profit level, clearly highlighting the massive 1:3 or 1:4 R:R ratio.
+            
+            **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels. The specific numbers are for the analyst to read, not for the calculator to use.
+
+            **End your response with exactly these labels on new lines (no extra text after them):**
+            Symbol:
+            Direction: (BUY, SELL, or NEUTRAL)
+            Entry: (Leave blank if NEUTRAL)
+            Stop Loss: (Leave blank if NEUTRAL)
+            Take Profit: (Leave blank if NEUTRAL)
+
+            DO NOT calculate lot sizes, leverage, or margin.
+            """
+
+            success = False
+            votes = []
+            results = []
+            raw_texts = []
+
             try:
-                response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
-                if response.data:
-                    cached = response.data[0]['result']
-                    st.session_state.analysis_result = cached['text']
-                    st.session_state.auto_symbol = cached['symbol']
-                    st.session_state.entry_field = cached['entry']
-                    st.session_state.sl_field = cached['sl']
-                    st.session_state.tp_field = cached['tp']
-                    st.success("🔒 Permanent Cloud Memory hit! Returning identical result.")
-                    st.rerun()
-            except:
-                pass
-
-        # ===== THE UPDATED "DETAILED SPECULATIVE SETUP" PROMPT =====
-        system_prompt = """
-        You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
-
-        You are provided with 3 charts: 4H, 30M, and 5M.
-
-        **HARD RULES:**
-        1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
-        2. **CONFLUENCE FILTER:** If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
-        3. **RISK TO REWARD FILTER:** If TP distance is NOT at least 2x SL distance, output NEUTRAL.
-        4. **QUALITY FILTER:** If chart is choppy or unclear, output NEUTRAL.
-
-        **OUTPUT FORMAT:**
-        **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
-        **🧩 30M Pattern Analysis:** (Identify exact pattern or structure).
-        **🎯 5M Sniper Entry:** (Point out exact liquidity grab or order block).
-        **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
-        
-        **IF YOU SAY NEUTRAL:**
-        You MUST provide an EXTREMELY DETAILED **🚨 SPECULATIVE SETUP:** section immediately after the verdict. 
-        Write this as a complete step-by-step trade plan in plain English. Include the following:
-        - **📌 Current Condition:** Explain exactly why we are not trading right now (e.g., momentum divergence, waiting for a break of structure).
-        - **🎬 The Trigger Scenario (The "If...Then..."):** Describe the exact price action trigger required for a future trade. (e.g., "If the 5M chart sweeps 77,300 and prints a sharp rejection wick...").
-        - **🎯 The Entry Zone:** State the specific price range to watch for the entry.
-        - **🛑 The Invalidation:** State the exact price where the setup becomes invalid (the Stop Loss).
-        - **🏆 The Target:** State the exact price target once the setup triggers.
-        - **⏳ The Timeframe to Watch:** State which timeframe (5M, 15M, or 1H) to monitor for the trigger.
-
-        **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels. The specific numbers are for the analyst to read, not for the calculator to use.
-
-        **End your response with exactly these labels on new lines (no extra text after them):**
-        Symbol:
-        Direction: (BUY, SELL, or NEUTRAL)
-        Entry: (Leave blank if NEUTRAL)
-        Stop Loss: (Leave blank if NEUTRAL)
-        Take Profit: (Leave blank if NEUTRAL)
-
-        DO NOT calculate lot sizes, leverage, or margin.
-        """
-
-        success = False
-        votes = []
-        results = []
-        raw_texts = []
-
-        try:
-            images = [Image.open(file) for file in uploaded_files]
-            with st.spinner("Running 3-Vote Accuracy Consensus..."):
-                for i in range(3):
-                    try:
-                        key = KEYS_LIST[i]
-                        client = genai.Client(api_key=key)
-                        chat = client.chats.create(model="gemini-3.6-flash")
-                        response = chat.send_message(
-                            message=[system_prompt, *images],
-                            config=genai.types.GenerateContentConfig(temperature=0.0)
-                        )
-                        parsed = parse_ai_response(response.text)
-                        raw_texts.append(response.text)
-                        
-                        if parsed:
-                            results.append(parsed)
-                            votes.append(parsed['direction'])
-                            increment_usage()
-                    except Exception as e:
-                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            continue
-                        else:
-                            continue
-
-                # THE VOTING LOGIC
-                buy_votes = votes.count("BUY")
-                sell_votes = votes.count("SELL")
-                final_direction = "NEUTRAL"
-                if buy_votes >= 2: final_direction = "BUY"
-                elif sell_votes >= 2: final_direction = "SELL"
-
-                # CASE 1: CLEAR TRADE
-                if final_direction != "NEUTRAL":
-                    winning_results = [r for r in results if r['direction'] == final_direction]
-                    avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
-                    avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
-                    avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
-                    sym = winning_results[0]['symbol']
-
-                    st.session_state.analysis_result = f"**AI Consensus (3-Vote {final_direction})**\n\nSymbol: {sym}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
-                    st.session_state.auto_symbol = sym
-                    st.session_state.entry_field = f"{avg_entry:.2f}"
-                    st.session_state.sl_field = f"{avg_sl:.2f}"
-                    st.session_state.tp_field = f"{avg_tp:.2f}"
-
-                    if supabase_connected:
+                images = [Image.open(file) for file in uploaded_files]
+                with st.spinner("Analyzing..."):
+                    for i in range(3):
                         try:
-                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except:
-                            pass
+                            key = KEYS_LIST[i]
+                            client = genai.Client(api_key=key)
+                            chat = client.chats.create(model="gemini-3.6-flash")
+                            response = chat.send_message(
+                                message=[system_prompt, *images],
+                                config=genai.types.GenerateContentConfig(temperature=0.0)
+                            )
+                            parsed = parse_ai_response(response.text)
+                            raw_texts.append(response.text)
+                            
+                            if parsed:
+                                results.append(parsed)
+                                votes.append(parsed['direction'])
+                                increment_usage()
+                        except Exception as e:
+                            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                                continue
+                            else:
+                                continue
 
-                    st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
-                    st.rerun()
-                    
-                # CASE 2: NEUTRAL - PROVIDE DETAILED SPECULATIVE ANALYSIS
-                else:
-                    if raw_texts:
-                        st.session_state.analysis_result = clean_analysis(raw_texts[0])
+                    # THE VOTING LOGIC
+                    buy_votes = votes.count("BUY")
+                    sell_votes = votes.count("SELL")
+                    final_direction = "NEUTRAL"
+                    if buy_votes >= 2: final_direction = "BUY"
+                    elif sell_votes >= 2: final_direction = "SELL"
+
+                    # CASE 1: CLEAR TRADE
+                    if final_direction != "NEUTRAL":
+                        winning_results = [r for r in results if r['direction'] == final_direction]
+                        avg_entry = sum(r['entry'] for r in winning_results) / len(winning_results)
+                        avg_sl = sum(r['sl'] for r in winning_results) / len(winning_results)
+                        avg_tp = sum(r['tp'] for r in winning_results) / len(winning_results)
+                        sym = winning_results[0]['symbol']
+
+                        st.session_state.analysis_result = f"**AI Consensus (3-Vote {final_direction})**\n\nSymbol: {sym}\nEntry: {avg_entry:.2f}\nStop Loss: {avg_sl:.2f}\nTake Profit: {avg_tp:.2f}"
+                        st.session_state.auto_symbol = sym
+                        st.session_state.entry_field = f"{avg_entry:.2f}"
+                        st.session_state.sl_field = f"{avg_sl:.2f}"
+                        st.session_state.tp_field = f"{avg_tp:.2f}"
+
+                        if supabase_connected:
+                            try:
+                                cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
+                                supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                            except:
+                                pass
+
+                        st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
+                        st.session_state.is_analyzing = False
+                        st.rerun()
                         
-                        st.warning("### 🛑 NO ACTIVE TRADE - Detailed Speculative Setup")
-                        st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **highly detailed speculative setup** below. Wait for the exact trigger conditions to be met before considering a trade.")
-                        
-                        with st.container(border=True):
-                            st.markdown(st.session_state.analysis_result)
-                        
-                        st.info("This is NOT an active trade. Monitor the specific timeframe and wait for the exact price action trigger described in the analysis. Only manually enter the levels into the calculator once the setup confirms.")
+                    # CASE 2: NEUTRAL - LUCREATIVE SPECULATION
                     else:
-                        st.warning("### 🛑 NO TRADE - No Speculative Analysis Available")
-                        st.warning("The AI could not even generate a speculative setup. It is safer to skip this chart entirely.")
+                        if raw_texts:
+                            st.session_state.analysis_result = clean_analysis(raw_texts[0])
+                            
+                            st.warning("### 🛑 NO ACTIVE TRADE - Speculative Setup Only")
+                            st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **speculative setup** below. Wait for these conditions to be met before considering a trade.")
+                            
+                            with st.container(border=True):
+                                st.markdown(st.session_state.analysis_result)
+                            
+                            # Custom Spec Box Display
+                            st.markdown(f"""
+                            <div class='spec-box'>
+                                <h3 style='color: #8A2BE2;'>🚨 Lucrative Speculative Playbook:</h3>
+                                {st.session_state.analysis_result}
+                                <p style='color: #00aaff; margin-top: 10px;'><b>Note:</b> These are NOT active trades. Only enter if the exact trigger conditions are met. Manually type the levels into the calculator once confirmed.</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            st.session_state.is_analyzing = False
+                            st.rerun()
+                        else:
+                            st.warning("### 🛑 NO TRADE - No Speculative Analysis Available")
+                            st.warning("The AI could not even generate a speculative setup. It is safer to skip this chart entirely.")
+                            st.session_state.is_analyzing = False
+                            st.rerun()
 
-        except Exception as e:
-            st.error(f"❌ AI Error: {e}")
+            except Exception as e:
+                st.error(f"❌ AI Error: {e}")
+                st.session_state.is_analyzing = False
 
-    if 'analysis_result' in st.session_state:
-        st.success("AI Analysis Summary:")
-        with st.container(border=True):
-            st.markdown(st.session_state['analysis_result'])
+        if st.session_state.analysis_result:
+            st.success("AI Analysis Summary:")
+            with st.container(border=True):
+                st.markdown(st.session_state.analysis_result)
 
-st.divider()
+    st.divider()
 
-# --- AUTO-FILLING MULTI-SYMBOL CALCULATOR ---
-st.subheader("🧮 Auto-Calculating Precision Calculator")
-st.caption("Values fill automatically after analysis. You can manually override them.")
+    # --- AUTO-FILLING MULTI-SYMBOL CALCULATOR ---
+    st.subheader("🧮 Auto-Calculating Precision Calculator")
+    st.caption("Values fill automatically after analysis. You can manually override them.")
 
-col1, col2 = st.columns(2)
-with col1:
-    try:
-        default_index = symbol_options.index(st.session_state.auto_symbol)
-    except (ValueError, AttributeError):
-        default_index = 0
-    
-    instrument = st.selectbox("Select Instrument (Auto-filled by AI)", symbol_options, index=default_index)
-    entry_input = st.text_input("Entry Price", key="entry_field")
-    stop_loss_input = st.text_input("Stop Loss", key="sl_field")
-    take_profit_input = st.text_input("Take Profit", key="tp_field")
+    col1, col2 = st.columns(2)
+    with col1:
+        try:
+            default_index = symbol_options.index(st.session_state.auto_symbol)
+        except (ValueError, AttributeError):
+            default_index = 0
+        
+        instrument = st.selectbox("Select Instrument (Auto-filled by AI)", symbol_options, index=default_index)
+        entry_input = st.text_input("Entry Price", key="entry_field")
+        stop_loss_input = st.text_input("Stop Loss", key="sl_field")
+        take_profit_input = st.text_input("Take Profit", key="tp_field")
 
-if instrument == placeholder:
-    st.info("Select an instrument to start calculating after analysis.")
-else:
-    try:
-        entry_price = float(entry_input) if entry_input else 0.0
-        stop_loss = float(stop_loss_input) if stop_loss_input else 0.0
-        take_profit = float(take_profit_input) if take_profit_input else 0.0
-    except:
-        entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
+    if instrument == placeholder:
+        st.info("Select an instrument to start calculating after analysis.")
+    else:
+        try:
+            entry_price = float(entry_input) if entry_input else 0.0
+            stop_loss = float(stop_loss_input) if stop_loss_input else 0.0
+            take_profit = float(take_profit_input) if take_profit_input else 0.0
+        except:
+            entry_price, stop_loss, take_profit = 0.0, 0.0, 0.0
 
-    contract_sizes = {"BTCUSD (Bitcoin)": 1.0, "XAUUSD (Gold)": 100.0, "EURUSD (Forex)": 100000.0}
-    contract_size = contract_sizes[instrument]
+        contract_sizes = {"BTCUSD (Bitcoin)": 1.0, "XAUUSD (Gold)": 100.0, "EURUSD (Forex)": 100000.0}
+        contract_size = contract_sizes[instrument]
 
-    if entry_price > 0 and stop_loss > 0 and take_profit > 0:
-        risk_amount = account_balance * (risk_percent / 100)
-        price_diff = abs(entry_price - stop_loss)
-        position_size = risk_amount / price_diff
-        margin_required = (position_size * entry_price) / leverage
-        lot_size = math.floor((position_size / contract_size) * 100) / 100
-        potential_profit = abs(take_profit - entry_price) * position_size
-        rr_ratio = (abs(take_profit - entry_price)) / price_diff
+        if entry_price > 0 and stop_loss > 0 and take_profit > 0:
+            risk_amount = account_balance * (risk_percent / 100)
+            price_diff = abs(entry_price - stop_loss)
+            position_size = risk_amount / price_diff
+            margin_required = (position_size * entry_price) / leverage
+            lot_size = math.floor((position_size / contract_size) * 100) / 100
+            potential_profit = abs(take_profit - entry_price) * position_size
+            rr_ratio = (abs(take_profit - entry_price)) / price_diff
 
-        st.success("--- LIVE RESULTS ---")
-        st.write(f"💼 **Account:** ${account_balance:,.2f} | **Lev:** {leverage:.0f}x | **Risk:** {risk_percent}% (${risk_amount:.2f})")
-        if lot_size < 0.01:
-            st.error(f"⚠️ Risk amount (${risk_amount:.2f}) is too small for 0.01 lots.")
-        else:
-            st.markdown(f"### 📊 Trade **{lot_size:.2f} Lots** (Min 0.01)")
-        st.write(f"🏦 **Margin Required:** ${margin_required:,.2f}")
-        st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
-        st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
+            st.success("--- LIVE RESULTS ---")
+            st.write(f"💼 **Account:** ${account_balance:,.2f} | **Lev:** {leverage:.0f}x | **Risk:** {risk_percent}% (${risk_amount:.2f})")
+            if lot_size < 0.01:
+                st.error(f"⚠️ Risk amount (${risk_amount:.2f}) is too small for 0.01 lots.")
+            else:
+                st.markdown(f"### 📊 Trade **{lot_size:.2f} Lots** (Min 0.01)")
+            st.write(f"🏦 **Margin Required:** ${margin_required:,.2f}")
+            st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
+            st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
 
-# --- FOOTER (DIRECT HTML INJECTION - EMERALD GREEN) ---
-st.divider()
-st.markdown("""
-<div style="color: #00E5A0; text-align: center; font-family: 'Courier New', monospace;">
-    <h3 style="color: #00E5A0;">Created by Alex Nderitu</h3>
-    <p style="color: #00E5A0;">Whatsapp +254759914001 for Further Assistance.</p>
-</div>
-""", unsafe_allow_html=True)
+    # --- FOOTER (DIRECT HTML INJECTION - EMERALD GREEN) ---
+    st.divider()
+    st.markdown("""
+    <div style="color: #00E5A0; text-align: center; font-family: 'Courier New', monospace;">
+        <h3 style="color: #00E5A0;">Created by Alex Nderitu</h3>
+        <p style="color: #00E5A0;">Whatsapp +254759914001 for Further Assistance.</p>
+    </div>
+    """, unsafe_allow_html=True)
