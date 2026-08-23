@@ -11,30 +11,51 @@ from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 
-# --- STYLING ---
+# --- YOUR ORIGINAL PREMIUM STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
     .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
     [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
     h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
+    
+    /* Your Purple Text */
     p, li, span, label, div {{ color: #c084fc !important; }}
+    
+    /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #c084fc !important; }}
+    
+    /* Buttons (50% Green Transparency) */
     .stButton>button {{ background-color: rgba(0, 200, 83, 0.5) !important; color: #000 !important; font-weight: bold; border: 1px solid rgba(0, 200, 83, 0.8) !important; border-radius: 5px; transition: all 0.2s ease; }}
     .stButton>button:hover {{ background-color: rgba(0, 200, 83, 0.7) !important; }}
+    
+    /* File Uploader */
     [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #c084fc !important; border-radius: 10px; padding: 10px; }}
+    
+    /* Progress Bars */
     .stProgress > div > div > div > div {{ background-color: #c084fc !important; }}
+    
+    /* Soft Green Glowing Spinner */
     .stSpinner > div {{ box-shadow: 0 0 25px rgba(0, 200, 83, 0.8); border: 2px solid #00C853; border-radius: 50%; animation: pulseGlow 1.5s infinite ease-in-out; }}
     @keyframes pulseGlow {{ 0% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} 50% {{ box-shadow: 0 0 30px rgba(0, 200, 83, 0.9); }} 100% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} }}
+    
+    /* Your Purple Main Analysis Box */
     .analysis-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.3); }}
     .analysis-text {{ color: #d8b4fe !important; line-height: 1.6; font-size: 15px; }}
+    
+    /* Your Gold Warning Box */
     .gold-warning-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center; }}
     .gold-warning-text {{ color: #f9e79f !important; font-weight: bold; font-size: 16px; line-height: 1.5; }}
+    
+    /* Your Gold Speculative Box */
     .spec-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); }}
     .spec-header {{ font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px; font-family: 'Courier New', monospace; }}
     .spec-text {{ color: #f9e79f !important; line-height: 1.6; font-size: 15px; }}
+    
+    /* Your Purple Info Box */
     .info-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 15px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.4); text-align: left; }}
     .info-text {{ color: #d8b4fe !important; line-height: 1.5; font-size: 14px; }}
+
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
@@ -42,7 +63,7 @@ st.markdown(f"""
 
 # --- HEADER ---
 st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Batch Scanner with Strict Validation.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk. Batch Scanner with Validation.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -60,7 +81,7 @@ try:
 except:
     supabase_connected = False
 
-# --- USER TRACKING ---
+# --- 1 DEVICE = 1 USER TRACKING ---
 cookies = CookieController()
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
@@ -138,59 +159,39 @@ def parse_ai_response(text):
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
     return None
 
-# --- STRICT PRE-SCAN (symbol + timeframe + zoom check) ---
+# --- STRICT PRE-SCAN (Symbol, TF, Zoom) ---
 def pre_scan_image_set(images, keys, usage_index):
-    """
-    Sends all 3 images to AI and returns:
-    - symbol (or None if not found)
-    - timeframes (list like ['4H','30M','5M'])
-    - zoom_flags: list of YES/NO for each image
-    Returns (symbol, timeframes, zoom_flags) or (None, None, None) on error.
-    """
     pre_scan_prompt = """
-    You are given 3 screenshots of trading charts (they are all for the same symbol).
+    You are given 3 screenshots of trading charts (same symbol).
     Analyze each chart and answer:
     1. Symbol: Is the trading symbol visible (e.g., BTCUSD, XAUUSD, EURUSD)? If yes, give the exact symbol. If not, say "UNKNOWN".
     2. Timeframes: For each chart, what timeframe is shown? (e.g., 4H, 30M, 5M). If not visible, say "N/A".
-    3. Zoom: For each chart, is the chart zoomed out enough to show a wide view of price action (at least 20-30 candles visible)? Answer YES or NO for each chart.
+    3. Zoom: For each chart, is the chart zoomed out enough to show a wide view (at least 20-30 candles visible)? Answer YES or NO.
 
-    Return your answer in EXACT format (no other text):
+    Return EXACT format:
     Symbol: [SYMBOL or UNKNOWN]
-    Timeframes: [TF1], [TF2], [TF3] (if any are N/A, put N/A)
-    Zoom: [YES/NO], [YES/NO], [YES/NO]  (for chart 1, chart 2, chart 3)
+    Timeframes: [TF1], [TF2], [TF3]
+    Zoom: [YES/NO], [YES/NO], [YES/NO]
     """
     try:
         key = keys[usage_index % len(keys)]
         client = genai.Client(api_key=key)
         chat = client.chats.create(model="gemini-3.6-flash")
-        response = chat.send_message(
-            message=[pre_scan_prompt, *images],
-            config=genai.types.GenerateContentConfig(temperature=0.0)
-        )
+        response = chat.send_message(message=[pre_scan_prompt, *images], config=genai.types.GenerateContentConfig(temperature=0.0))
         text = response.text.strip()
-        
-        # Extract symbol
         sym_match = re.search(r"Symbol:\s*([A-Z]+|UNKNOWN)", text, re.IGNORECASE)
         symbol_raw = sym_match.group(1).upper() if sym_match else "UNKNOWN"
         symbol = None if symbol_raw == "UNKNOWN" else symbol_raw
-        
-        # Extract timeframes list
         tf_match = re.search(r"Timeframes:\s*(.+)", text, re.IGNORECASE)
         timeframes = []
         if tf_match:
-            raw_tfs = tf_match.group(1).strip()
-            tfs = re.findall(r"\d+[HhMmDdWw]|N/A", raw_tfs, re.IGNORECASE)
+            tfs = re.findall(r"\d+[HhMmDdWw]|N/A", tf_match.group(1), re.IGNORECASE)
             timeframes = [tf.upper() for tf in tfs]
-        
-        # Extract zoom flags
         zoom_match = re.search(r"Zoom:\s*(.+)", text, re.IGNORECASE)
         zoom_flags = []
         if zoom_match:
-            raw_zoom = zoom_match.group(1).strip()
-            # Find YES/NO parts
-            parts = re.findall(r"(YES|NO)", raw_zoom, re.IGNORECASE)
+            parts = re.findall(r"(YES|NO)", zoom_match.group(1), re.IGNORECASE)
             zoom_flags = [p.upper() for p in parts]
-        
         return symbol, timeframes, zoom_flags
     except Exception as e:
         st.warning(f"Pre-scan error: {e}")
@@ -221,14 +222,12 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### 📦 Auto-Saved Inventory")
-    
     if supabase_connected:
         try:
             inv_response = supabase.table('symbol_inventory').select('symbol_name').execute()
             st.session_state.known_symbols = [x['symbol_name'] for x in inv_response.data]
         except:
             pass
-    
     if st.session_state.known_symbols:
         for sym in st.session_state.known_symbols:
             st.markdown(f"- {sym}")
@@ -241,7 +240,7 @@ with st.sidebar:
 
 st.divider()
 
-# --- BATCH DETECTION & STRICT VALIDATION ---
+# --- BATCH DETECTION & VALIDATION ---
 if uploaded_files:
     num_groups = len(uploaded_files) // 3
     remainder = len(uploaded_files) % 3
@@ -259,12 +258,10 @@ if uploaded_files:
                 images = [Image.open(f) for f in group_files]
                 symbol, tfs, zoom_flags = pre_scan_image_set(images, KEYS_LIST, i)
                 
-                # Validation: symbol must be found, timeframes must exactly match required, and zoom must be all YES
                 required_tfs = ['4H', '30M', '5M']
                 is_valid = False
                 if symbol and tfs == required_tfs and zoom_flags == ['YES', 'YES', 'YES']:
                     is_valid = True
-                    # Save symbol to inventory
                     if supabase_connected:
                         try:
                             supabase.table('symbol_inventory').upsert({'symbol_name': symbol}).execute()
@@ -273,17 +270,10 @@ if uploaded_files:
                             pass
                 
                 detected.append({
-                    'index': i,
-                    'symbol': symbol,
-                    'timeframes': tfs,
-                    'zoom_flags': zoom_flags,
-                    'valid': is_valid,
-                    'files': group_files
+                    'index': i, 'symbol': symbol, 'timeframes': tfs, 'zoom_flags': zoom_flags, 'valid': is_valid, 'files': group_files
                 })
-            
             st.session_state.detected_groups = detected
         
-        # Display results
         st.subheader("Detection & Validation Results")
         for group in st.session_state.detected_groups:
             sym = group['symbol'] if group['symbol'] else "Unknown"
@@ -292,13 +282,11 @@ if uploaded_files:
             status = "✅ Valid" if group['valid'] else "❌ Rejected"
             st.markdown(f"**Group {group['index']+1}:** {sym} | TF: {tfs} | Zoom: {zoom} → {status}")
         
-        # Check for invalid groups
         invalid_groups = [g for g in st.session_state.detected_groups if not g['valid']]
         if invalid_groups:
             st.error("❌ Some groups were rejected. Reasons may include: missing symbol, missing timeframe, or charts too zoomed in (must show 20+ candles). Please re-upload valid charts for those symbols.")
             st.stop()
         
-        # All valid, proceed to full analysis
         if st.button("🚀 Run Full Analysis on All Valid Groups"):
             st.session_state.batch_results = []
             with st.spinner("Running AI Consensus on all symbols..."):
@@ -306,26 +294,17 @@ if uploaded_files:
                 for group in st.session_state.detected_groups:
                     symbol = group['symbol'].upper() if group['symbol'] else "UNKNOWN"
                     group_files = group['files']
-                    
                     hasher = hashlib.sha256()
                     for file in group_files:
                         hasher.update(file.getvalue())
                     image_hash = hasher.hexdigest()
-                    
                     cached = False
                     if supabase_connected:
                         try:
                             response = supabase.table('analysis_cache').select('*').eq('hash', image_hash).execute()
                             if response.data:
                                 cached_data = response.data[0]['result']
-                                results.append({
-                                    'symbol': symbol,
-                                    'direction': cached_data['direction'],
-                                    'entry': cached_data['entry'],
-                                    'sl': cached_data['sl'],
-                                    'tp': cached_data['tp'],
-                                    'status': 'Cached'
-                                })
+                                results.append({'symbol': symbol, 'direction': cached_data['direction'], 'entry': cached_data['entry'], 'sl': cached_data['sl'], 'tp': cached_data['tp'], 'status': 'Cached'})
                                 cached = True
                         except:
                             pass
@@ -339,49 +318,34 @@ if uploaded_files:
                             key = KEYS_LIST[key_index]
                             client = genai.Client(api_key=key)
                             chat = client.chats.create(model="gemini-3.6-flash")
-                            
                             system_prompt = """
                             You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
-                            
                             You are provided with 3 charts: 4H, 30M, and 5M for this specific symbol.
-                            
-                            **HARD RULES:**
-                            1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
-                            2. **CONFLUENCE FILTER:** If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
-                            3. **RISK TO REWARD FILTER:** If TP distance is NOT at least 2x SL distance, output NEUTRAL.
-                            4. **QUALITY FILTER:** If chart is choppy or unclear, output NEUTRAL.
-                            
+                            **HARD RULES:** 1. TREND FILTER: Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
+                            2. CONFLUENCE FILTER: If 4H, 30M, and 5M do NOT agree on direction, output NEUTRAL.
+                            3. RISK TO REWARD FILTER: If TP distance is NOT at least 2x SL distance, output NEUTRAL.
+                            4. QUALITY FILTER: If chart is choppy or unclear, output NEUTRAL.
                             **OUTPUT FORMAT:**
                             **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
                             **🧩 30M Pattern Analysis:** (Identify exact pattern or structure).
                             **🎯 5M Sniper Entry:** (Point out exact liquidity grab or order block).
                             **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
-                            
                             **IF YOU SAY NEUTRAL:**
                             You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
-                            
-                            **CRITICAL REQUIREMENT:**
-                            State clearly whether this is a **BUY** or **SELL** setup. Use the exact phrasing: **"BUY when/if..."** or **"SELL when/if..."**.
-                            Then, list the **THREE (3) individual occurrences** that would support that specific entry. These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
+                            **CRITICAL REQUIREMENT:** State clearly whether this is a **BUY** or **SELL** setup. Use the exact phrasing: **"BUY when/if..."** or **"SELL when/if..."**.
+                            Then, list the **THREE (3) individual occurrences** that would support that specific entry. They do NOT have to happen all at the same time. Each is an independent trigger.
                             - Example: "SELL when/if: (1) Price sweeps 77,300, (2) A wick rejection forms on the 5M chart, (3) The 30M trend begins to shift bearish."
                             - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
-                            
                             **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels.
-                            
                             **End your response with exactly these labels on new lines (no extra text after them):**
                             Symbol:
                             Direction: (BUY, SELL, or NEUTRAL)
                             Entry: (Leave blank if NEUTRAL)
                             Stop Loss: (Leave blank if NEUTRAL)
                             Take Profit: (Leave blank if NEUTRAL)
-                            
                             DO NOT calculate lot sizes, leverage, or margin.
                             """
-                            
-                            response = chat.send_message(
-                                message=[system_prompt, *images],
-                                config=genai.types.GenerateContentConfig(temperature=0.0)
-                            )
+                            response = chat.send_message(message=[system_prompt, *images], config=genai.types.GenerateContentConfig(temperature=0.0))
                             parsed = parse_ai_response(response.text)
                             if parsed:
                                 parsed_results.append(parsed)
@@ -399,14 +363,7 @@ if uploaded_files:
                             avg_entry = sum(r['entry'] for r in winning) / len(winning)
                             avg_sl = sum(r['sl'] for r in winning) / len(winning)
                             avg_tp = sum(r['tp'] for r in winning) / len(winning)
-                            result = {
-                                'symbol': symbol,
-                                'direction': final_direction,
-                                'entry': f"{avg_entry:.2f}",
-                                'sl': f"{avg_sl:.2f}",
-                                'tp': f"{avg_tp:.2f}",
-                                'status': 'Active'
-                            }
+                            result = {'symbol': symbol, 'direction': final_direction, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}", 'status': 'Active'}
                             if supabase_connected:
                                 try:
                                     cache_data = {'text': f"{final_direction} signal for {symbol}", 'symbol': symbol, 'direction': final_direction, 'entry': f"{avg_entry:.2f}", 'sl': f"{avg_sl:.2f}", 'tp': f"{avg_tp:.2f}"}
@@ -414,16 +371,8 @@ if uploaded_files:
                                 except:
                                     pass
                         else:
-                            result = {
-                                'symbol': symbol,
-                                'direction': 'NEUTRAL',
-                                'entry': '',
-                                'sl': '',
-                                'tp': '',
-                                'status': 'Speculative'
-                            }
+                            result = {'symbol': symbol, 'direction': 'NEUTRAL', 'entry': '', 'sl': '', 'tp': '', 'status': 'Speculative'}
                         results.append(result)
-                
                 st.session_state.batch_results = results
             st.rerun()
 
@@ -433,7 +382,6 @@ if st.session_state.batch_results:
     st.dataframe(df, use_container_width=True)
     
     selected = st.selectbox("Select a result to load into the calculator:", options=[f"{r['symbol']} - {r['direction']}" for r in st.session_state.batch_results])
-    
     if selected:
         selected_index = [f"{r['symbol']} - {r['direction']}" for r in st.session_state.batch_results].index(selected)
         selected_result = st.session_state.batch_results[selected_index]
@@ -496,11 +444,11 @@ else:
         st.write(f"🎯 **Potential Profit:** ${potential_profit:,.2f}")
         st.write(f"📈 **Risk-Reward Ratio:** 1 : {rr_ratio:.2f}")
 
-# --- FOOTER ---
+# --- YOUR FOOTER ---
 st.divider()
 st.markdown("""
 <div style="color: #00E5A0; text-align: center; font-family: 'Courier New', monospace;">
     <h3 style="color: #00E5A0;">Created by Alex Nderitu</h3>
-    <p style="color: #c084fc;">Whatsapp +254759914001 for Further Assistance.</p>
+    <p style="color: #00E5A0;">Whatsapp +254759914001 for Further Assistance.</p>
 </div>
 """, unsafe_allow_html=True)
