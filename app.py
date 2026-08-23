@@ -138,13 +138,8 @@ def parse_ai_response(text):
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
     return None
 
-# --- NEW FUNCTION: PRE-SCAN (Detect Symbol & Validate Timeframes) ---
+# --- PRE-SCAN ---
 def pre_scan_image_set(images, keys, usage_index):
-    """
-    Sends 3 images to AI to detect symbol and timeframes.
-    Returns (symbol, timeframes) or (None, None) if error.
-    """
-    # Build prompt for pre-scan
     pre_scan_prompt = """
     You are given 3 charts for the same trading symbol. Identify:
     1. The **trading symbol** (e.g., BTCUSD, XAUUSD, EURUSD) – look at the top-left corner of any chart.
@@ -157,7 +152,6 @@ def pre_scan_image_set(images, keys, usage_index):
     Do not include any other text.
     """
     try:
-        # Use a key from the pool (rotate through keys)
         key = keys[usage_index % len(keys)]
         client = genai.Client(api_key=key)
         chat = client.chats.create(model="gemini-3.6-flash")
@@ -166,15 +160,12 @@ def pre_scan_image_set(images, keys, usage_index):
             config=genai.types.GenerateContentConfig(temperature=0.0)
         )
         text = response.text.strip()
-        # Extract symbol
         sym_match = re.search(r"Symbol:\s*([A-Z]+)", text, re.IGNORECASE)
         symbol = sym_match.group(1).upper() if sym_match else None
-        # Extract timeframes
         tf_match = re.search(r"Timeframes:\s*(.+)", text, re.IGNORECASE)
         timeframes = []
         if tf_match:
             tfs = re.findall(r"\d+[HhMmDdWw]", tf_match.group(1))
-            # Normalize to upper
             timeframes = [tf.upper() for tf in tfs]
         return symbol, timeframes
     except Exception as e:
@@ -187,7 +178,7 @@ symbol_options = [placeholder, "BTCUSD (Bitcoin)", "XAUUSD (Gold)", "EURUSD (For
 
 if 'batch_results' not in st.session_state: st.session_state.batch_results = []
 if 'known_symbols' not in st.session_state: st.session_state.known_symbols = []
-if 'detected_groups' not in st.session_state: st.session_state.detected_groups = []  # list of dicts
+if 'detected_groups' not in st.session_state: st.session_state.detected_groups = []
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -204,7 +195,6 @@ with st.sidebar:
     st.divider()
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
 
-    # --- SYMBOL INVENTORY ---
     st.divider()
     st.markdown("### 📦 Auto-Saved Inventory")
     
@@ -229,7 +219,6 @@ st.divider()
 
 # --- BATCH DETECTION & VALIDATION ---
 if uploaded_files:
-    # Ensure count is multiple of 3
     num_groups = len(uploaded_files) // 3
     remainder = len(uploaded_files) % 3
     if remainder != 0:
@@ -239,13 +228,11 @@ if uploaded_files:
     if num_groups == 0:
         st.error("Please upload at least 3 images (1 symbol).")
     else:
-        # Pre-scan each group
         with st.spinner("Pre-scanning images for symbols and timeframes..."):
             detected = []
             for i in range(num_groups):
                 group_files = uploaded_files[i*3 : (i+1)*3]
                 images = [Image.open(f) for f in group_files]
-                # Use the first key for pre-scan (usage_index = i)
                 symbol, tfs = pre_scan_image_set(images, KEYS_LIST, i)
                 detected.append({
                     'index': i,
@@ -255,12 +242,10 @@ if uploaded_files:
                     'files': group_files
                 })
             
-            # Validate
             required_tfs = ['4H', '30M', '5M']
             for group in detected:
                 if group['timeframes'] == required_tfs:
                     group['valid'] = True
-                    # Save symbol if new
                     if supabase_connected and group['symbol']:
                         try:
                             supabase.table('symbol_inventory').upsert({'symbol_name': group['symbol']}).execute()
@@ -272,7 +257,6 @@ if uploaded_files:
             
             st.session_state.detected_groups = detected
         
-        # Display detection results
         st.subheader("Detection & Validation Results")
         for group in st.session_state.detected_groups:
             sym = group['symbol'] if group['symbol'] else "Unknown"
@@ -280,13 +264,11 @@ if uploaded_files:
             status = "✅ Valid" if group['valid'] else "❌ Rejected (wrong timeframes)"
             st.markdown(f"**Group {group['index']+1}:** {sym} – {tfs} → {status}")
         
-        # If any invalid, stop and ask re-upload
         invalid_groups = [g for g in st.session_state.detected_groups if not g['valid']]
         if invalid_groups:
             st.error("❌ Some groups have incorrect timeframes. Please re-upload the correct 4H, 30M, 5M charts for those symbols.")
             st.stop()
         
-        # If all valid, show "Run Full Analysis" button
         if st.button("🚀 Run Full Analysis on All Valid Groups"):
             st.session_state.batch_results = []
             with st.spinner("Running AI Consensus on all symbols..."):
@@ -295,13 +277,11 @@ if uploaded_files:
                     symbol = group['symbol'].upper() if group['symbol'] else "UNKNOWN"
                     group_files = group['files']
                     
-                    # Calculate hash
                     hasher = hashlib.sha256()
                     for file in group_files:
                         hasher.update(file.getvalue())
                     image_hash = hasher.hexdigest()
                     
-                    # Check supabase cache
                     cached = False
                     if supabase_connected:
                         try:
@@ -330,6 +310,7 @@ if uploaded_files:
                             client = genai.Client(api_key=key)
                             chat = client.chats.create(model="gemini-3.6-flash")
                             
+                            # UPDATED PROMPT: "BUY when/if" or "SELL when/if"
                             system_prompt = """
                             You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
                             
@@ -348,7 +329,12 @@ if uploaded_files:
                             **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
                             
                             **IF YOU SAY NEUTRAL:**
-                            You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict. List the **THREE (3) individual occurrences** that would support an entry. These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
+                            You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
+                            
+                            **CRITICAL REQUIREMENT:**
+                            State clearly whether this is a **BUY** or **SELL** setup. Use the exact phrasing: **"BUY when/if..."** or **"SELL when/if..."**.
+                            Then, list the **THREE (3) individual occurrences** that would support that specific entry. These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
+                            - Example: "SELL when/if: (1) Price sweeps 77,300, (2) A wick rejection forms on the 5M chart, (3) The 30M trend begins to shift bearish."
                             - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
                             
                             **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels.
