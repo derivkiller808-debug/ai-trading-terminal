@@ -194,7 +194,6 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # ===== THE "10 SETUPS, PICK TOP 3" PROMPT =====
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -309,7 +308,6 @@ if uploaded_files:
                         else:
                             main_analysis, spec_part = full_text, "No speculative setup provided."
 
-                        # SPLITTING THE FULL 10 LIST FROM THE TOP 3
                         top3_available = False
                         top3_text = spec_part
                         full_list_text = spec_part
@@ -332,7 +330,6 @@ if uploaded_files:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # THE GOLDEN BOX (TOP 3)
                         st.markdown(f"""
                         <div class='spec-box'>
                             <div class='spec-header'>🏆 TOP 3 HIGHEST PROBABILITY SETUPS</div>
@@ -340,7 +337,6 @@ if uploaded_files:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # THE INFO BOX (FULL 10 LIST)
                         st.markdown(f"""
                         <div class='info-box'>
                             <div class='info-text'><strong>Full List of 10 Setups for Reference:</strong><br>{full_list_text.strip()}</div>
@@ -350,10 +346,12 @@ if uploaded_files:
                         st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
                     else:
+                        # UPDATED: Shows a clear connection error instead of generic message
                         st.markdown(f"""
                         <div class='gold-warning-box'>
-                            <div class='gold-warning-text'>🛑 NO TRADE - No Speculative Analysis Available</div>
-                            <div class='gold-warning-text'>The AI could not even generate a speculative setup. It is safer to skip this chart entirely.</div>
+                            <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
+                            <div class='gold-warning-text'>The AI models did not respond. This usually happens when your API keys are temporarily rate-limited or there is a network glitch.</div>
+                            <div class='gold-warning-text'>Please wait 30 seconds and click "Run Top-Trader Analysis" again.</div>
                         </div>
                         """, unsafe_allow_html=True)
 
