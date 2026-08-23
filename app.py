@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
+import streamlit.components.v1 as components
 
 # --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
@@ -58,9 +59,25 @@ try:
 except:
     supabase_connected = False
 
-# --- USER TRACKING LOGIC ---
-if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
+# --- NEW: PERMANENT DEVICE TRACKING (LocalStorage) ---
+# Inject JS to get or create a persistent Device ID in the browser
+device_id_js = """
+<script>
+const existingID = localStorage.getItem('brilliant_trader_device_id');
+const deviceID = existingID || 'device-' + Date.now() + '-' + Math.random().toString(16).substr(2, 8);
+localStorage.setItem('brilliant_trader_device_id', deviceID);
+window.parent.postMessage({type: "streamlit:setComponentValue", value: deviceID}, "*");
+</script>
+"""
+device_id_component = components.html(device_id_js, height=0, width=0)
+
+# Use the persistent ID. If the JS hasn't loaded yet (first millisecond), generate a temporary one.
+if device_id_component:
+    st.session_state.session_id = device_id_component
+else:
+    # Fallback for the very first load if JS hasn't returned yet
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
 
 if 'total_users' not in st.session_state: st.session_state.total_users = 0
 if 'active_users' not in st.session_state: st.session_state.active_users = 0
@@ -69,21 +86,17 @@ def track_visit():
     if supabase_connected:
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
-            supabase.table('app_visits').upsert({
-                'session_id': st.session_state.session_id, 
-                'last_seen': now_iso
-            }).execute()
-            
+            # Using the persistent Device ID
+            supabase.table('app_visits').upsert({'session_id': st.session_state.session_id, 'last_seen': now_iso}).execute()
             total = supabase.table('app_visits').select('*', count='exact').execute()
             st.session_state.total_users = total.count
-            
-            # CHANGED TO 24 HOURS HERE
             active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
         except:
             pass
 
+# Run tracking
 track_visit()
 
 # --- USAGE COUNTER LOGIC ---
@@ -153,19 +166,13 @@ with st.sidebar:
     account_balance = st.number_input("Account Balance ($)", min_value=1.0, value=80.0, step=10.0)
     leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
     risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
-    
     st.divider()
-    
-    # UPDATED TEXT TO 24H
     st.markdown("### 👥 Community Stats")
     st.markdown(f"🟢 **Active (24h):** {st.session_state.active_users}")
     st.markdown(f"👤 **Total Users:** {st.session_state.total_users}")
-    
     st.divider()
-    
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
-    
     st.subheader("📈 Upload Charts")
     uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
@@ -197,6 +204,7 @@ if uploaded_files:
             except:
                 pass
 
+        # THE UPDATED PROMPT (3 Individual Occurrences)
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -215,10 +223,14 @@ if uploaded_files:
         **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
         
         **IF YOU SAY NEUTRAL:**
-        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict. 
-        In this section, describe the exact price action trigger required for a future trade in plain English ONLY. 
-        For example: "If 5M price sweeps 77,300 and leaves a wick rejection, then look for a buy entry near 77,350 with a stop loss near 77,000 and a take profit near 78,200."
-        **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels. The specific numbers are for the analyst to read, not for the calculator to use.
+        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
+        
+        **CRITICAL REQUIREMENT:**
+        List the **THREE (3) individual occurrences** that would support an entry. These should be listed as a numbered list (1, 2, 3). They do NOT have to happen all at the same time. Each is an independent trigger that supports the trade.
+        - Example: (1) If price sweeps 77,300, (2) If a wick rejection forms on the 5M chart, (3) If the 30M trend begins to shift bullish.
+        - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
+
+        **IMPORTANT:** Do NOT include the Entry, Stop Loss, or Take Profit labels at the end if your verdict is NEUTRAL. Only include the Symbol and Direction: NEUTRAL labels.
 
         **End your response with exactly these labels on new lines (no extra text after them):**
         Symbol:
