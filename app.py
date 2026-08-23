@@ -41,7 +41,7 @@ st.markdown(f"""
 
 # --- HEADER ---
 st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 4H, 30M, 5M. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 3 Charts. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
@@ -64,7 +64,7 @@ cookies = CookieController()
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
     device_id = "device-" + str(uuid.uuid4())
-    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)  # 1 year
+    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)
 
 st.session_state.session_id = device_id
 
@@ -160,8 +160,19 @@ with st.sidebar:
     st.divider()
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
-    st.subheader("📈 Upload Charts")
-    uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+
+    # --- THREE EXACT UPLOAD SPACES (Not labeled by timeframe) ---
+    st.subheader("📈 Upload 3 Charts")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        chart1 = st.file_uploader("Chart 1", type=["png", "jpg", "jpeg"], key="chart_1")
+    with col2:
+        chart2 = st.file_uploader("Chart 2", type=["png", "jpg", "jpeg"], key="chart_2")
+    with col3:
+        chart3 = st.file_uploader("Chart 3", type=["png", "jpg", "jpeg"], key="chart_3")
+    
+    # Combine into a list
+    uploaded_files = [x for x in [chart1, chart2, chart3] if x is not None]
 
 st.divider()
 
@@ -175,7 +186,7 @@ if uploaded_files:
             st.markdown(f"""
             <div class='gold-warning-box'>
                 <div class='gold-warning-text'>⚠️ ERROR: Invalid Image Count</div>
-                <div class='gold-warning-text'>You must upload exactly 3 charts (4H, 30M, and 5M) to proceed.</div>
+                <div class='gold-warning-text'>You must fill exactly 3 upload spaces (Chart 1, Chart 2, and Chart 3) to proceed.</div>
                 <div class='gold-warning-text'>Please re-upload the correct number of images.</div>
             </div>
             """, unsafe_allow_html=True)
@@ -206,7 +217,7 @@ if uploaded_files:
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
-        You are provided with 3 charts: 4H, 30M, and 5M.
+        You are provided with 3 charts.
 
         **CRITICAL VALIDATION RULES:**
         Before analyzing, validate the 3 images.
@@ -283,7 +294,6 @@ if uploaded_files:
                 # CHECK FOR VALIDATION FAILURE from the first AI response
                 first_raw_text = raw_texts[0] if raw_texts else ""
                 if re.search(r"Validation:\s*FAIL", first_raw_text, re.IGNORECASE):
-                    # Extract the error reasons
                     error_match = re.search(r"Validation Error\(s\):(.*)", first_raw_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
                     
@@ -291,7 +301,7 @@ if uploaded_files:
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>⚠️ ERROR: Image Validation Failed</div>
                         <div class='gold-warning-text'>{errors}</div>
-                        <div class='gold-warning-text'>Please re-upload the correct 4H, 30M, and 5M charts with matching symbols and try again.</div>
+                        <div class='gold-warning-text'>Please re-upload the correct charts with matching symbols and try again.</div>
                     </div>
                     """, unsafe_allow_html=True)
                     st.stop()
