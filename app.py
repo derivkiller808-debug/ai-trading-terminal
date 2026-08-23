@@ -61,11 +61,10 @@ except:
 
 # --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
 cookies = CookieController()
-
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
     device_id = "device-" + str(uuid.uuid4())
-    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)  # 1 year in seconds
+    cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)  # 1 year
 
 st.session_state.session_id = device_id
 
@@ -77,10 +76,8 @@ def track_visit():
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
             supabase.table('app_visits').upsert({'session_id': st.session_state.session_id, 'last_seen': now_iso}).execute()
-            
             total = supabase.table('app_visits').select('*', count='exact').execute()
             st.session_state.total_users = total.count
-            
             active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             active = supabase.table('app_visits').select('*', count='exact').gte('last_seen', active_cutoff).execute()
             st.session_state.active_users = active.count
@@ -172,6 +169,18 @@ st.divider()
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
+
+        # STRICT UPLOAD COUNT CHECK (Min: 3, Max: 3)
+        if len(uploaded_files) != 3:
+            st.markdown(f"""
+            <div class='gold-warning-box'>
+                <div class='gold-warning-text'>⚠️ ERROR: Invalid Image Count</div>
+                <div class='gold-warning-text'>You must upload exactly 3 charts (4H, 30M, and 5M) to proceed.</div>
+                <div class='gold-warning-text'>Please re-upload the correct number of images.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+
         if os.path.exists(USAGE_FILE): os.remove(USAGE_FILE)
         hasher = hashlib.sha256()
         for file in uploaded_files:
@@ -193,11 +202,21 @@ if uploaded_files:
             except:
                 pass
 
-        # UPDATED PROMPT: "Buy when..." instead of "If price..."
+        # UPDATED PROMPT: Includes strict validation rules
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
         You are provided with 3 charts: 4H, 30M, and 5M.
+
+        **CRITICAL VALIDATION RULES:**
+        Before analyzing, validate the 3 images.
+        1. Do all images have the matching symbol (e.g., all BTCUSD)?
+        2. Are the timeframes clearly 4H, 30M, and 5M?
+        3. Are they zoomed out well for a better view (enough candles to see structure)?
+
+        **Output Validation Status at the very top:**
+        Validation: PASS  OR  Validation: FAIL
+        Validation Error(s): (List reasons if FAIL, otherwise state "None")
 
         **HARD RULES:**
         1. **TREND FILTER:** Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
@@ -260,6 +279,22 @@ if uploaded_files:
                             continue
                         else:
                             continue
+
+                # CHECK FOR VALIDATION FAILURE from the first AI response
+                first_raw_text = raw_texts[0] if raw_texts else ""
+                if re.search(r"Validation:\s*FAIL", first_raw_text, re.IGNORECASE):
+                    # Extract the error reasons
+                    error_match = re.search(r"Validation Error\(s\):(.*)", first_raw_text, re.IGNORECASE)
+                    errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
+                    
+                    st.markdown(f"""
+                    <div class='gold-warning-box'>
+                        <div class='gold-warning-text'>⚠️ ERROR: Image Validation Failed</div>
+                        <div class='gold-warning-text'>{errors}</div>
+                        <div class='gold-warning-text'>Please re-upload the correct 4H, 30M, and 5M charts with matching symbols and try again.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.stop()
 
                 buy_votes = votes.count("BUY")
                 sell_votes = votes.count("SELL")
