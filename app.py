@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from supabase import create_client, Client
 
-# --- STYLING (PURPLE TEXT + GLOWING BORDERS) ---
+# --- STYLING (PURPLE MAIN BOX & GOLDEN BROWN SPEC BOX) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -23,7 +23,7 @@ st.markdown(f"""
     /* Inputs */
     input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #c084fc !important; }}
     
-    /* Buttons (0.3 Opacity, 0.5 on Hover) */
+    /* Buttons */
     .stButton>button {{
         background-color: rgba(0, 229, 160, 0.3) !important;
         color: #000 !important;
@@ -32,18 +32,14 @@ st.markdown(f"""
         border-radius: 5px;
         transition: all 0.2s ease;
     }}
-    .stButton>button:hover {{
-        background-color: rgba(0, 229, 160, 0.5) !important;
-        border-color: #00E5A0 !important;
-    }}
-    
+    .stButton>button:hover {{ background-color: rgba(0, 229, 160, 0.5) !important; }}
+
     /* File Uploader & Containers */
     [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #c084fc !important; border-radius: 10px; padding: 10px; }}
-    [data-testid="stVerticalBlockBorderWrapper"] {{ background-color: #141722 !important; border-color: #c084fc !important; border-radius: 10px; padding: 10px; }}
     
     /* Progress Bars */
     .stProgress > div > div > div > div {{ background-color: #c084fc !important; }}
-    
+
     /* GLOWING ANALYSIS SPINNER */
     .stSpinner > div {{
         box-shadow: 0 0 25px rgba(192, 132, 252, 0.8);
@@ -51,15 +47,14 @@ st.markdown(f"""
         border-radius: 50%;
         animation: pulseGlow 1.5s infinite ease-in-out;
     }}
-    
     @keyframes pulseGlow {{
         0% {{ box-shadow: 0 0 10px rgba(192, 132, 252, 0.4); }}
         50% {{ box-shadow: 0 0 30px rgba(192, 132, 252, 0.9); }}
         100% {{ box-shadow: 0 0 10px rgba(192, 132, 252, 0.4); }}
     }}
 
-    /* LUXURY SPECULATIVE SETUP BOX */
-    .spec-box {{
+    /* NEW: PURPLE MAIN ANALYSIS BOX (Starts at 4H Trend Analysis) */
+    .analysis-box {{
         border: 2px solid #c084fc;
         background: linear-gradient(145deg, #1a1f2e, #2d1b4e);
         border-radius: 15px;
@@ -67,18 +62,25 @@ st.markdown(f"""
         margin-top: 10px;
         box-shadow: 0 0 20px rgba(192, 132, 252, 0.3);
     }}
+    .analysis-text {{ color: #d8b4fe !important; line-height: 1.6; font-size: 15px; }}
+
+    /* NEW: GOLDEN BROWN LUXURY SPECULATIVE SETUP BOX */
+    .spec-box {{
+        border: 2px solid #f1c40f; /* Gold */
+        background: linear-gradient(145deg, #4e342e, #6d4c41); /* Golden Brown */
+        border-radius: 15px;
+        padding: 20px;
+        margin-top: 10px;
+        box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); /* Gold Glow */
+    }}
     .spec-header {{
         font-size: 18px;
         font-weight: bold;
-        color: #e9d5ff !important;
+        color: #f9e79f !important; /* Light Gold */
         margin-bottom: 10px;
         font-family: 'Courier New', monospace;
     }}
-    .spec-text {{
-        color: #d8b4fe !important;
-        line-height: 1.6;
-        font-size: 15px;
-    }}
+    .spec-text {{ color: #f9e79f !important; line-height: 1.6; font-size: 15px; }}
 
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
@@ -172,11 +174,9 @@ with st.sidebar:
     account_balance = st.number_input("Account Balance ($)", min_value=1.0, value=1000.0, step=10.0)
     leverage = st.number_input("Leverage (Default 400)", min_value=1.0, value=400.0, step=10.0)
     risk_percent = st.slider("Risk % of Account", min_value=0.1, max_value=100.0, value=1.0, step=0.1)
-    
     st.divider()
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
-    
     st.subheader("📈 Upload Charts")
     uploaded_files = st.file_uploader("Upload Exactly 3 Charts (4H, 30M, 5M)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
@@ -248,7 +248,7 @@ if uploaded_files:
 
         try:
             images = [Image.open(file) for file in uploaded_files]
-            with st.spinner("Analyzing..."):  # This will now glow purple due to the CSS
+            with st.spinner("Analyzing..."):  # Purple glow due to CSS
                 for i in range(3):
                     try:
                         key = KEYS_LIST[i]
@@ -302,10 +302,9 @@ if uploaded_files:
                     st.success(f"✅ High Accuracy Signal Locked! ({len(winning_results)} AIs agreed)")
                     st.rerun()
                     
-                # CASE 2: NEUTRAL - THE "LUXURY SPECULATIVE SETUP" BOX
+                # CASE 2: NEUTRAL - PURPLE MAIN BOX + GOLDEN BROWN SPEC BOX
                 else:
                     if raw_texts:
-                        # Split the raw analysis to separate the "Speculative Setup" section
                         full_text = clean_analysis(raw_texts[0])
                         split_marker = "🚨 SPECULATIVE SETUP:"
                         if split_marker in full_text:
@@ -316,11 +315,14 @@ if uploaded_files:
                         st.warning("### 🛑 NO ACTIVE TRADE - Speculative Setup Only")
                         st.warning("The 3 AI models did not reach a clear consensus right now. However, they have provided a **speculative setup** below. Wait for these conditions to be met before considering a trade.")
                         
-                        # Show main analysis
-                        with st.container(border=True):
-                            st.markdown(main_analysis)
+                        # Display the Main Analysis in the Purple Box
+                        st.markdown(f"""
+                        <div class='analysis-box'>
+                            <div class='analysis-text'>{main_analysis.strip()}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
-                        # Show the Luxury Speculative Box
+                        # Display the Speculative Setup in the Golden Brown Box
                         st.markdown(f"""
                         <div class='spec-box'>
                             <div class='spec-header'>🚨 LUXURY SPECULATIVE SETUP</div>
