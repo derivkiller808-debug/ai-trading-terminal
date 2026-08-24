@@ -55,7 +55,7 @@ try:
     supabase_connected = True
 except: supabase_connected = False
 
-# --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
+# --- COOKIE DEVICE TRACKING ---
 cookies = CookieController()
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
@@ -94,10 +94,10 @@ def increment_usage():
     with open(USAGE_FILE, "w") as f: f.write(str(count + 1))
     return count + 1
 
-# --- SAFE FLOAT CONVERSION ---
+# --- SAFE FLOAT ---
 def safe_float(s):
     if not s: return None
-    s = s.replace(',', '').strip()  # remove commas
+    s = s.replace(',', '').strip()
     if s.upper() == 'N/A' or s == '': return None
     try: return float(s)
     except: return None
@@ -128,7 +128,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- PARSING (Main verdict) with comma support ---
+# --- PARSING ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -151,13 +151,11 @@ def parse_ai_response(text):
         return {'symbol': sym, 'direction': direction, 'entry': entry, 'sl': sl, 'tp': tp}
     return None
 
-# --- PARSING #1 setup from "Top 3" text ---
 def parse_top3_first(text):
     top3_block = re.search(r"TOP 3 SPECULATIVE SETUPS.*", text, re.IGNORECASE | re.DOTALL)
     if not top3_block:
         return None
     block = top3_block.group(0)
-    # Extract first Entry, Stop Loss, Take Profit within that block (allows commas)
     entry_match = re.search(r"Entry\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
     sl_match = re.search(r"Stop\s*Loss\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
     tp_match = re.search(r"Take\s*Profit\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
@@ -168,6 +166,34 @@ def parse_top3_first(text):
         if e is not None and s is not None and t is not None:
             return e, s, t
     return None
+
+# --- FUNCTION TO RENDER THE SINGLE SUMMARY BOX ---
+def render_summary_box(direction, symbol, entry, sl, tp, reasoning):
+    dir_color = "#00FF00" if direction == "BUY" else "#FF0000" if direction == "SELL" else "#FFD700"
+    sl_color = "#FF0000"
+    tp_color = "#00FF00"
+    
+    entry_str = f"{entry:.2f}" if entry else "N/A"
+    sl_str = f"{sl:.2f}" if sl else "N/A"
+    tp_str = f"{tp:.2f}" if tp else "N/A"
+    
+    html = f"""
+    <div class='spec-box'>
+        <div class='spec-header'>📊 AI Analysis Summary</div>
+        <div style='font-size: 16px; margin-top: 10px;'>
+            <p><b style='color: {dir_color};'>Direction: {direction}</b></p>
+            <p><b style='color: #c084fc;'>Symbol: {symbol}</b></p>
+            <p><b style='color: white;'>Entry: {entry_str}</b></p>
+            <p><b style='color: {sl_color};'>Stop Loss: {sl_str}</b></p>
+            <p><b style='color: {tp_color};'>Take Profit: {tp_str}</b></p>
+        </div>
+        <div style='margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;'>
+            <b style='color: #f9e79f;'>Reasoning / Speculative Analysis:</b>
+            <p style='color: #f9e79f;'>{reasoning}</p>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -260,11 +286,6 @@ if uploaded_files:
         - A brief trigger description (e.g., "Buy when price sweeps 77,300")
         - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
         
-        Example:
-        1. Buy when price sweeps 77,300. Entry: 77,350. Stop Loss: 77,000. Take Profit: 78,200.
-        2. Sell when price rejects 78,000. Entry: 77,900. Stop Loss: 78,300. Take Profit: 76,800.
-        3. Buy when price holds 76,500. Entry: 76,600. Stop Loss: 76,200. Take Profit: 77,800.
-        
         **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
         **CRITICAL FORMAT INSTRUCTION (for the entire response):**
@@ -281,6 +302,7 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
+                # Show loading box
                 st.markdown(f"""
                 <div class='spec-box'>
                     <div class='spec-header'>📊 AI Analysis Summary</div>
@@ -325,68 +347,77 @@ if uploaded_files:
 
                 parsed_data = parse_ai_response(ai_text)
 
+                # Determine direction and numbers
+                direction = "NEUTRAL"
+                symbol = "BTCUSD (Bitcoin)"
+                entry = sl = tp = None
+                reasoning = ""
+
                 if parsed_data and parsed_data['direction'] != "NEUTRAL":
-                    sym = parsed_data['symbol']
-                    st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
-                    st.session_state.auto_symbol = sym
-                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
-                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
-                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
-
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except: pass
-
-                    st.success("✅ Analysis Complete! (Fast Mode)")
-                    st.rerun()
+                    direction = parsed_data['direction']
+                    symbol = parsed_data['symbol']
+                    entry = parsed_data['entry']
+                    sl = parsed_data['sl']
+                    tp = parsed_data['tp']
+                    # Extract reasoning (everything before the labels)
+                    reasoning = ai_text.split("Symbol:")[0] if "Symbol:" in ai_text else ai_text
                 else:
-                    # NEUTRAL - try to get #1 setup numbers
+                    # Try top3 first
                     top3_nums = parse_top3_first(ai_text)
                     if top3_nums:
                         entry, sl, tp = top3_nums
-                        if parsed_data and parsed_data['symbol']:
-                            sym = parsed_data['symbol']
-                        else:
-                            sym = "BTCUSD (Bitcoin)"
-                        st.session_state.analysis_result = f"**AI Speculative Entry (#1 Setup)**\n\nSymbol: {sym}\nEntry: {entry:.2f}\nStop Loss: {sl:.2f}\nTake Profit: {tp:.2f}"
-                        st.session_state.auto_symbol = sym
-                        st.session_state.entry_field = f"{entry:.2f}"
-                        st.session_state.sl_field = f"{sl:.2f}"
-                        st.session_state.tp_field = f"{tp:.2f}"
-                    else:
-                        sym = "BTCUSD (Bitcoin)"
-                        if parsed_data and parsed_data['symbol']:
-                            sym = parsed_data['symbol']
-                        st.session_state.analysis_result = f"**AI Analysis (NEUTRAL)**\n\nSymbol: {sym}\nEntry: N/A\nStop Loss: N/A\nTake Profit: N/A"
-                        st.session_state.auto_symbol = sym
-                        st.session_state.entry_field = ""
-                        st.session_state.sl_field = ""
-                        st.session_state.tp_field = ""
+                    # Determine symbol
+                    if parsed_data and parsed_data['symbol']:
+                        symbol = parsed_data['symbol']
+                    # Direction stays NEUTRAL
+                    # Reasoning is the whole AI text
+                    reasoning = ai_text
 
-                    # Display the speculative setup details
-                    full_text = clean_analysis(ai_text)
-                    split_marker = "🚨 SPECULATIVE SETUP:"
-                    if split_marker in full_text:
-                        main_analysis, spec_part = full_text.split(split_marker, 1)
-                    else:
-                        main_analysis, spec_part = full_text, "No speculative setup provided."
+                # Store summary data
+                st.session_state.summary_data = {
+                    'direction': direction,
+                    'symbol': symbol,
+                    'entry': entry,
+                    'sl': sl,
+                    'tp': tp,
+                    'reasoning': reasoning
+                }
 
+                # Auto-fill calculator
+                st.session_state.auto_symbol = symbol
+                if entry: st.session_state.entry_field = f"{entry:.2f}"
+                if sl: st.session_state.sl_field = f"{sl:.2f}"
+                if tp: st.session_state.tp_field = f"{tp:.2f}"
+
+                # Save to Supabase if entry exists
+                if entry and sl and tp:
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{entry:.2f}", 'sl': f"{sl:.2f}", 'tp': f"{tp:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except: pass
+
+                # Show speculative setup details (if any)
+                full_text = clean_analysis(ai_text)
+                split_marker = "🚨 SPECULATIVE SETUP:"
+                if split_marker in full_text:
+                    main_analysis, spec_part = full_text.split(split_marker, 1)
+                else:
+                    main_analysis, spec_part = full_text, ""
+
+                if spec_part:
                     top3_text = spec_part
                     full_list_text = spec_part
                     if "🔥 TOP 3 SPECULATIVE SETUPS:" in spec_part:
                         full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
 
-                    ticker = sym.split()[0] if sym else "Unknown"
-
                     st.markdown(f"""
                     <div class='gold-warning-box'>
-                        <div class='gold-warning-text'>Scanned '{ticker}' Successfully. AI speculations and high probability entries are below</div>
+                        <div class='gold-warning-text'>Scanned '{symbol.split()[0]}' Successfully. AI speculations and high probability entries are below</div>
                     </div>
                     """, unsafe_allow_html=True)
-
+                    
                     st.markdown(f"""
                     <div class='analysis-box'>
                         <div class='analysis-text'>{main_analysis.strip()}</div>
@@ -408,25 +439,24 @@ if uploaded_files:
 
                     st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
-                    # Show the summary box (if it exists)
-                    if 'analysis_result' in st.session_state:
-                        st.markdown(f"""
-                        <div class='spec-box'>
-                            <div class='spec-header'>📊 AI Analysis Summary (Speculative)</div>
-                            <div class='spec-text'>{st.session_state['analysis_result']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                # Force rerun to remove loading box and show final summary
+                st.rerun()
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
-    if 'analysis_result' in st.session_state:
-        st.markdown(f"""
-        <div class='spec-box'>
-            <div class='spec-header'>📊 AI Analysis Summary</div>
-            <div class='spec-text'>{st.session_state['analysis_result']}</div>
-        </div>
-        """, unsafe_allow_html=True)
+# --- FINAL SUMMARY BOX (ONLY ONE) ---
+if 'summary_data' in st.session_state:
+    render_summary_box(
+        st.session_state.summary_data['direction'],
+        st.session_state.summary_data['symbol'],
+        st.session_state.summary_data['entry'],
+        st.session_state.summary_data['sl'],
+        st.session_state.summary_data['tp'],
+        st.session_state.summary_data['reasoning']
+    )
+    # Remove the data so it doesn't render twice on page refresh
+    del st.session_state.summary_data
 
 st.divider()
 
