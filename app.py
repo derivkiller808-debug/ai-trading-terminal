@@ -165,15 +165,7 @@ def parse_top3_all(text):
             s = safe_float(sl_match.group(1))
             t = safe_float(tp_match.group(1))
             if e and s and t:
-                desc = item.strip()
-                # Determine speculative direction from the description text
-                if "Buy when" in desc or "buy" in desc.lower():
-                    spec_direction = "BUY"
-                elif "Sell when" in desc or "sell" in desc.lower():
-                    spec_direction = "SELL"
-                else:
-                    spec_direction = "NEUTRAL"
-                setups.append({'desc': clean_text(desc), 'entry': e, 'sl': s, 'tp': t, 'spec_direction': spec_direction})
+                setups.append({'desc': clean_text(item.strip()), 'entry': e, 'sl': s, 'tp': t})
     return setups[:3]
 
 # --- SIDEBAR ---
@@ -263,12 +255,11 @@ if uploaded_files:
         - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
         - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS:**
         
-        **CRITICAL RANKING RULE:**
-        When you rank the setups to pick the TOP 3, you MUST ensure that the **#1 setup** is the one that involves **Order Blocks (OB)** or **Breaker Blocks (BB)**. If there is a setup that uses OB/BB, it must be placed at number 1. If no OB/BB setup exists, use the highest probability setup.
-        
         **For EACH of the TOP 3 setups, you MUST provide:**
-        - A brief trigger description (e.g., "Buy when price sweeps 77,300 at the Order Block")
+        - A brief trigger description (e.g., "Buy when price sweeps 77,300")
         - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
+
+        **IMPORTANT: The third setup (Setup #3) MUST always be a liquidity sweep entry** (e.g., "Buy when price sweeps the low and shows rejection" or "Sell when price sweeps the high and fails"). Ensure that Setup #3 is explicitly a liquidity sweep.
 
         **CRITICAL FORMAT INSTRUCTION (for the entire response):**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
@@ -346,10 +337,6 @@ if uploaded_files:
                     if parsed_data and parsed_data['symbol']:
                         symbol = parsed_data['symbol']
                     reasoning = ai_text
-                    
-                    # If we have a top3 list, use the direction of the #1 setup
-                    if top3_list and top3_list[0].get('spec_direction') in ['BUY', 'SELL']:
-                        direction = top3_list[0]['spec_direction']
 
                 st.session_state.summary_data = {
                     'direction': direction,
@@ -361,8 +348,8 @@ if uploaded_files:
                     'top3_list': top3_list
                 }
 
-                # Auto-fill calculator with first setup if NEUTRAL or if direction came from top3
-                if direction != "NEUTRAL" and top3_list:
+                # Auto-fill calculator with first setup if NEUTRAL
+                if direction == "NEUTRAL" and top3_list:
                     st.session_state.auto_symbol = symbol
                     st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
                     st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
@@ -440,22 +427,23 @@ if 'summary_data' in st.session_state:
     reasoning = clean_text(data['reasoning'])
     top3_list = data.get('top3_list', [])
 
-    # Determine the label: If top3_list exists, we are in speculative mode, but direction is now BUY/SELL from #1 setup
+    # Determine display label for direction
     if direction == "BUY":
-        if top3_list:
-            dir_label = "SPECULATIVE BUY"
-        else:
-            dir_label = "BUY"
-        dir_color = "#00FF00"
+        dir_label = "BUY"; dir_color = "#00FF00"
     elif direction == "SELL":
-        if top3_list:
-            dir_label = "SPECULATIVE SELL"
-        else:
-            dir_label = "SELL"
-        dir_color = "#FF0000"
+        dir_label = "SELL"; dir_color = "#FF0000"
     else:
-        dir_label = "SPECULATIVE"
-        dir_color = "#FFD700"
+        # NEUTRAL: try to detect if first speculative setup is Buy or Sell
+        if top3_list and len(top3_list) > 0:
+            desc_lower = top3_list[0]['desc'].lower()
+            if "buy" in desc_lower:
+                dir_label = "SPECULATIVE BUY"; dir_color = "#FFD700"
+            elif "sell" in desc_lower:
+                dir_label = "SPECULATIVE SELL"; dir_color = "#FFD700"
+            else:
+                dir_label = "SPECULATIVE"; dir_color = "#FFD700"
+        else:
+            dir_label = "SPECULATIVE"; dir_color = "#FFD700"
     
     sl_color = "#FF0000"; tp_color = "#00FF00"
 
