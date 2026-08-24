@@ -120,7 +120,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- UPDATED PARSING (Handles N/A and flexible formatting) ---
+# --- PARSING ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -135,7 +135,6 @@ def parse_ai_response(text):
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
         
-        # Handle N/A
         if "N/A" in [entry_match.group(1), sl_match.group(1), tp_match.group(1)]:
             return {'symbol': sym, 'direction': direction, 'entry': None, 'sl': None, 'tp': None}
             
@@ -200,7 +199,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # UPDATED PROMPT: Uses N/A for NEUTRAL so it never fails the parser
+        # UPDATED PROMPT: RANKED TOP 3 WITH ENTRY, SL, TP
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -228,8 +227,16 @@ if uploaded_files:
         You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
         - First, brainstorm **EXACTLY TEN (10) individual speculative setups** that could support an entry. Use "Buy when..." or "Sell when..." for each. Number them 1 to 10. They do NOT have to happen all at the same time.
         - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
-        - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS:**
-        - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
+        - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS (RANKED):**
+
+        **STRICT FORMAT FOR THE TOP 3 SECTION:**
+        - Rank them from #1 (most likely to play out) to #3 (least likely among the top 3).
+        - For each setup (#1, #2, #3), you MUST include:
+          - **Title:** (Short description of the setup)
+          - **Entry:**
+          - **Stop Loss:**
+          - **Take Profit:**
+          - **Confluence Trigger:** (The exact conditions needed, e.g., "Buy when price sweeps 77,300 and wicks")
 
         **CRITICAL FORMAT INSTRUCTION:**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
@@ -302,16 +309,17 @@ if uploaded_files:
                     else:
                         main_analysis, spec_part = full_text, "No speculative setup provided."
 
+                    # Extract the Top 3 section
                     top3_text = spec_part
                     full_list_text = spec_part
-                    if "🔥 TOP 3 SPECULATIVE SETUPS:" in spec_part:
-                        full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
-                        top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
+                    if "🔥 TOP 3 SPECULATIVE SETUPS" in spec_part:
+                        full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS", 1)
+                        top3_text = "🔥 TOP 3 SPECULATIVE SETUPS" + top3_text
 
                     st.markdown(f"""
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 speculative setups from the 10 listed below.</div>
+                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 ranked speculative setups with their entry, stop, and target levels.</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -323,7 +331,7 @@ if uploaded_files:
 
                     st.markdown(f"""
                     <div class='spec-box'>
-                        <div class='spec-header'>🏆 TOP 3 HIGHEST PROBABILITY SETUPS</div>
+                        <div class='spec-header'>🏆 TOP 3 SPECULATIVE SETUPS (RANKED)</div>
                         <div class='spec-text'>{top3_text.strip()}</div>
                     </div>
                     """, unsafe_allow_html=True)
