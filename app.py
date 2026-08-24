@@ -11,7 +11,7 @@ from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 
-# --- STYLING ---
+# --- CLEAN CSS (Robust and Guaranteed) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -95,9 +95,10 @@ def safe_float(s):
 
 # --- HELPERS TO KEEP HTML CLEAN ---
 def clean_text(text):
+    """Removes backticks and replaces HTML special chars to prevent broken boxes."""
     if not text: return ""
-    text = text.replace('`', '')
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    text = text.replace('`', '')  # Remove all backticks (fixes code format issue)
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')  # Prevent HTML breakage
     return text
 
 def clean_analysis(text):
@@ -165,7 +166,7 @@ def parse_top3_all(text):
             t = safe_float(tp_match.group(1))
             if e and s and t:
                 desc = item.strip()
-                # Determine direction from the description (Buy when / Sell when)
+                # Determine speculative direction from the description text
                 if "Buy when" in desc or "buy" in desc.lower():
                     spec_direction = "BUY"
                 elif "Sell when" in desc or "sell" in desc.lower():
@@ -233,7 +234,6 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # --- UPDATED PROMPT: OB/BB Priority ---
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -347,9 +347,9 @@ if uploaded_files:
                         symbol = parsed_data['symbol']
                     reasoning = ai_text
                     
-                    # #1 setup should be the OB/BB one (automatically ensured by prompt, but let's verify)
-                    if top3_list and top3_list[0].get('spec_direction'):
-                        direction = top3_list[0]['spec_direction']  # This will be "BUY" or "SELL"
+                    # If we have a top3 list, use the direction of the #1 setup
+                    if top3_list and top3_list[0].get('spec_direction') in ['BUY', 'SELL']:
+                        direction = top3_list[0]['spec_direction']
 
                 st.session_state.summary_data = {
                     'direction': direction,
@@ -361,8 +361,8 @@ if uploaded_files:
                     'top3_list': top3_list
                 }
 
-                # Auto-fill calculator with first setup if NEUTRAL
-                if direction in ["BUY", "SELL"] and top3_list:
+                # Auto-fill calculator with first setup if NEUTRAL or if direction came from top3
+                if direction != "NEUTRAL" and top3_list:
                     st.session_state.auto_symbol = symbol
                     st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
                     st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
@@ -440,9 +440,8 @@ if 'summary_data' in st.session_state:
     reasoning = clean_text(data['reasoning'])
     top3_list = data.get('top3_list', [])
 
-    # CHANGE LABEL: "SPECULATIVE BUY" or "SPECULATIVE SELL" for neutral
+    # Determine the label: If top3_list exists, we are in speculative mode, but direction is now BUY/SELL from #1 setup
     if direction == "BUY":
-        # If it came from top3, it's speculative; if from direct, it's real.
         if top3_list:
             dir_label = "SPECULATIVE BUY"
         else:
