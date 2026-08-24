@@ -128,7 +128,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- PARSING ---
+# --- PARSING FUNCTIONS ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -151,48 +151,90 @@ def parse_ai_response(text):
         return {'symbol': sym, 'direction': direction, 'entry': entry, 'sl': sl, 'tp': tp}
     return None
 
-def parse_top3_first(text):
+def parse_top3_all(text):
+    """Extract all three top setups from the 'TOP 3 SPECULATIVE SETUPS' block."""
     top3_block = re.search(r"TOP 3 SPECULATIVE SETUPS.*", text, re.IGNORECASE | re.DOTALL)
     if not top3_block:
-        return None
+        return []
     block = top3_block.group(0)
-    entry_match = re.search(r"Entry\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
-    sl_match = re.search(r"Stop\s*Loss\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
-    tp_match = re.search(r"Take\s*Profit\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
-    if entry_match and sl_match and tp_match:
-        e = safe_float(entry_match.group(1))
-        s = safe_float(sl_match.group(1))
-        t = safe_float(tp_match.group(1))
-        if e is not None and s is not None and t is not None:
-            return e, s, t
-    return None
+    # Each setup is expected to have a description, Entry, SL, TP. Use regex to find all groups.
+    # We'll split by numbered items (1., 2., 3.) and parse each.
+    items = re.split(r'\n(?=\d\.)', block)
+    setups = []
+    for item in items:
+        if not re.search(r'Entry\s*[:=]?\s*[\d,]+', item):
+            continue
+        entry_match = re.search(r"Entry\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
+        sl_match = re.search(r"Stop\s*Loss\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
+        tp_match = re.search(r"Take\s*Profit\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
+        if entry_match and sl_match and tp_match:
+            e = safe_float(entry_match.group(1))
+            s = safe_float(sl_match.group(1))
+            t = safe_float(tp_match.group(1))
+            if e and s and t:
+                description = item.strip()
+                setups.append({'desc': description, 'entry': e, 'sl': s, 'tp': t})
+    return setups[:3]  # only top 3
 
 # --- FUNCTION TO RENDER THE SINGLE SUMMARY BOX ---
-def render_summary_box(direction, symbol, entry, sl, tp, reasoning):
-    dir_color = "#00FF00" if direction == "BUY" else "#FF0000" if direction == "SELL" else "#FFD700"
+def render_summary_box(direction, symbol, entry, sl, tp, reasoning, top3_list=None):
+    # Set direction label and color
+    if direction == "BUY":
+        dir_label = "BUY"
+        dir_color = "#00FF00"
+    elif direction == "SELL":
+        dir_label = "SELL"
+        dir_color = "#FF0000"
+    else:
+        dir_label = "SPECULATIVE"
+        dir_color = "#FFD700"
+    
     sl_color = "#FF0000"
     tp_color = "#00FF00"
     
-    entry_str = f"{entry:.2f}" if entry else "N/A"
-    sl_str = f"{sl:.2f}" if sl else "N/A"
-    tp_str = f"{tp:.2f}" if tp else "N/A"
-    
-    html = f"""
-    <div class='spec-box'>
-        <div class='spec-header'>📊 AI Analysis Summary</div>
-        <div style='font-size: 16px; margin-top: 10px;'>
-            <p><b style='color: {dir_color};'>Direction: {direction}</b></p>
+    # If top3_list is provided, we show that instead of single entry
+    if top3_list:
+        setups_html = ""
+        for i, setup in enumerate(top3_list, 1):
+            desc = setup['desc'].replace('<', '&lt;').replace('>', '&gt;')
+            setups_html += f"""
+            <div style="border: 1px solid #f1c40f; border-radius: 8px; padding: 10px; margin-top: 10px;">
+                <p style="color: #f9e79f; font-weight: bold;">Setup {i}: {desc.split('.')[0] if '.' in desc else desc}</p>
+                <p style="color: white;">Entry: {setup['entry']:.2f}</p>
+                <p style="color: {sl_color};">Stop Loss: {setup['sl']:.2f}</p>
+                <p style="color: {tp_color};">Take Profit: {setup['tp']:.2f}</p>
+            </div>
+            """
+        html = f"""
+        <div class='spec-box'>
+            <div class='spec-header'>📊 AI Analysis Summary</div>
+            <p><b style='color: {dir_color};'>Direction: {dir_label}</b></p>
+            <p><b style='color: #c084fc;'>Symbol: {symbol}</b></p>
+            {setups_html}
+            <div style='margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;'>
+                <b style='color: #f9e79f;'>Reasoning / Speculative Analysis:</b>
+                <p style='color: #f9e79f;'>{reasoning}</p>
+            </div>
+        </div>
+        """
+    else:
+        entry_str = f"{entry:.2f}" if entry else "N/A"
+        sl_str = f"{sl:.2f}" if sl else "N/A"
+        tp_str = f"{tp:.2f}" if tp else "N/A"
+        html = f"""
+        <div class='spec-box'>
+            <div class='spec-header'>📊 AI Analysis Summary</div>
+            <p><b style='color: {dir_color};'>Direction: {dir_label}</b></p>
             <p><b style='color: #c084fc;'>Symbol: {symbol}</b></p>
             <p><b style='color: white;'>Entry: {entry_str}</b></p>
             <p><b style='color: {sl_color};'>Stop Loss: {sl_str}</b></p>
             <p><b style='color: {tp_color};'>Take Profit: {tp_str}</b></p>
+            <div style='margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;'>
+                <b style='color: #f9e79f;'>Reasoning / Speculative Analysis:</b>
+                <p style='color: #f9e79f;'>{reasoning}</p>
+            </div>
         </div>
-        <div style='margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;'>
-            <b style='color: #f9e79f;'>Reasoning / Speculative Analysis:</b>
-            <p style='color: #f9e79f;'>{reasoning}</p>
-        </div>
-    </div>
-    """
+        """
     st.markdown(html, unsafe_allow_html=True)
 
 # --- SIDEBAR ---
@@ -352,6 +394,7 @@ if uploaded_files:
                 symbol = "BTCUSD (Bitcoin)"
                 entry = sl = tp = None
                 reasoning = ""
+                top3_list = []
 
                 if parsed_data and parsed_data['direction'] != "NEUTRAL":
                     direction = parsed_data['direction']
@@ -359,18 +402,12 @@ if uploaded_files:
                     entry = parsed_data['entry']
                     sl = parsed_data['sl']
                     tp = parsed_data['tp']
-                    # Extract reasoning (everything before the labels)
                     reasoning = ai_text.split("Symbol:")[0] if "Symbol:" in ai_text else ai_text
                 else:
-                    # Try top3 first
-                    top3_nums = parse_top3_first(ai_text)
-                    if top3_nums:
-                        entry, sl, tp = top3_nums
-                    # Determine symbol
+                    # NEUTRAL: Get the top 3 setups
+                    top3_list = parse_top3_all(ai_text)
                     if parsed_data and parsed_data['symbol']:
                         symbol = parsed_data['symbol']
-                    # Direction stays NEUTRAL
-                    # Reasoning is the whole AI text
                     reasoning = ai_text
 
                 # Store summary data
@@ -380,20 +417,28 @@ if uploaded_files:
                     'entry': entry,
                     'sl': sl,
                     'tp': tp,
-                    'reasoning': reasoning
+                    'reasoning': reasoning,
+                    'top3_list': top3_list
                 }
 
-                # Auto-fill calculator
-                st.session_state.auto_symbol = symbol
-                if entry: st.session_state.entry_field = f"{entry:.2f}"
-                if sl: st.session_state.sl_field = f"{sl:.2f}"
-                if tp: st.session_state.tp_field = f"{tp:.2f}"
+                # Auto-fill calculator with first setup if NEUTRAL
+                if direction == "NEUTRAL" and top3_list:
+                    st.session_state.auto_symbol = symbol
+                    st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
+                    st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
+                    st.session_state.tp_field = f"{top3_list[0]['tp']:.2f}"
 
-                # Save to Supabase if entry exists
+                # Save to Supabase if entry exists (either direct or first top3)
                 if entry and sl and tp:
                     if supabase_connected:
                         try:
                             cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{entry:.2f}", 'sl': f"{sl:.2f}", 'tp': f"{tp:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except: pass
+                elif top3_list:
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{top3_list[0]['entry']:.2f}", 'sl': f"{top3_list[0]['sl']:.2f}", 'tp': f"{top3_list[0]['tp']:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except: pass
 
@@ -447,13 +492,15 @@ if uploaded_files:
 
 # --- FINAL SUMMARY BOX (ONLY ONE) ---
 if 'summary_data' in st.session_state:
+    data = st.session_state.summary_data
     render_summary_box(
-        st.session_state.summary_data['direction'],
-        st.session_state.summary_data['symbol'],
-        st.session_state.summary_data['entry'],
-        st.session_state.summary_data['sl'],
-        st.session_state.summary_data['tp'],
-        st.session_state.summary_data['reasoning']
+        data['direction'],
+        data['symbol'],
+        data['entry'],
+        data['sl'],
+        data['tp'],
+        data['reasoning'],
+        data.get('top3_list', [])
     )
     # Remove the data so it doesn't render twice on page refresh
     del st.session_state.summary_data
