@@ -11,7 +11,7 @@ from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 
-# --- CLEAN CSS (Robust and Guaranteed) ---
+# --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -26,6 +26,15 @@ st.markdown(f"""
     .stProgress > div > div > div > div {{ background-color: #c084fc !important; }}
     .stSpinner > div {{ box-shadow: 0 0 25px rgba(0, 200, 83, 0.8); border: 2px solid #00C853; border-radius: 50%; animation: pulseGlow 1.5s infinite ease-in-out; }}
     @keyframes pulseGlow {{ 0% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} 50% {{ box-shadow: 0 0 30px rgba(0, 200, 83, 0.9); }} 100% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} }}
+    .analysis-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.3); }}
+    .analysis-text {{ color: #d8b4fe !important; line-height: 1.6; font-size: 15px; }}
+    .gold-warning-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center; }}
+    .gold-warning-text {{ color: #f9e79f !important; font-weight: bold; font-size: 16px; line-height: 1.5; }}
+    .spec-box {{ border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); }}
+    .spec-header {{ font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px; font-family: 'Courier New', monospace; }}
+    .spec-text {{ color: #f9e79f !important; line-height: 1.6; font-size: 15px; }}
+    .info-box {{ border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 15px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.4); text-align: left; }}
+    .info-text {{ color: #d8b4fe !important; line-height: 1.5; font-size: 14px; }}
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
@@ -93,14 +102,7 @@ def safe_float(s):
     try: return float(s)
     except: return None
 
-# --- HELPERS TO KEEP HTML CLEAN ---
-def clean_text(text):
-    """Removes backticks and replaces HTML special chars to prevent broken boxes."""
-    if not text: return ""
-    text = text.replace('`', '')  # Remove all backticks (fixes code format issue)
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')  # Prevent HTML breakage
-    return text
-
+# --- TEXT CLEANER ---
 def clean_analysis(text):
     text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
     text = re.sub(r'(?<=\w)\s+(?=\w)', ' ', text)
@@ -109,6 +111,7 @@ def clean_analysis(text):
     text = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', text)
     text = text.replace("Pricehas", "Price has")
     text = text.replace("Priceis", "Price is")
+    text = text.replace("Pricewill", "Price will")
     text = text.replace("4H Trend Analysis:", "\n\n**4H Trend Analysis:**")
     text = text.replace("30M Pattern Analysis:", "\n\n**30M Pattern Analysis:**")
     text = text.replace("5M Sniper Entry:", "\n\n**5M Sniper Entry:**")
@@ -139,6 +142,7 @@ def parse_ai_response(text):
         elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
+        
         entry = safe_float(entry_match.group(1))
         sl = safe_float(sl_match.group(1))
         tp = safe_float(tp_match.group(1))
@@ -147,26 +151,49 @@ def parse_ai_response(text):
         return {'symbol': sym, 'direction': direction, 'entry': entry, 'sl': sl, 'tp': tp}
     return None
 
-def parse_top3_all(text):
+def parse_top3_first(text):
     top3_block = re.search(r"TOP 3 SPECULATIVE SETUPS.*", text, re.IGNORECASE | re.DOTALL)
     if not top3_block:
-        return []
+        return None
     block = top3_block.group(0)
-    items = re.split(r'\n(?=\d\.)', block)
-    setups = []
-    for item in items:
-        if not re.search(r'Entry\s*[:=]?\s*[\d,]+', item):
-            continue
-        entry_match = re.search(r"Entry\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
-        sl_match = re.search(r"Stop\s*Loss\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
-        tp_match = re.search(r"Take\s*Profit\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
-        if entry_match and sl_match and tp_match:
-            e = safe_float(entry_match.group(1))
-            s = safe_float(sl_match.group(1))
-            t = safe_float(tp_match.group(1))
-            if e and s and t:
-                setups.append({'desc': clean_text(item.strip()), 'entry': e, 'sl': s, 'tp': t})
-    return setups[:3]
+    entry_match = re.search(r"Entry\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
+    sl_match = re.search(r"Stop\s*Loss\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
+    tp_match = re.search(r"Take\s*Profit\s*[::=]?\s*([\d,]+(?:\.\d+)?)", block, re.IGNORECASE)
+    if entry_match and sl_match and tp_match:
+        e = safe_float(entry_match.group(1))
+        s = safe_float(sl_match.group(1))
+        t = safe_float(tp_match.group(1))
+        if e is not None and s is not None and t is not None:
+            return e, s, t
+    return None
+
+# --- FUNCTION TO RENDER THE SINGLE SUMMARY BOX ---
+def render_summary_box(direction, symbol, entry, sl, tp, reasoning):
+    dir_color = "#00FF00" if direction == "BUY" else "#FF0000" if direction == "SELL" else "#FFD700"
+    sl_color = "#FF0000"
+    tp_color = "#00FF00"
+    
+    entry_str = f"{entry:.2f}" if entry else "N/A"
+    sl_str = f"{sl:.2f}" if sl else "N/A"
+    tp_str = f"{tp:.2f}" if tp else "N/A"
+    
+    html = f"""
+    <div class='spec-box'>
+        <div class='spec-header'>📊 AI Analysis Summary</div>
+        <div style='font-size: 16px; margin-top: 10px;'>
+            <p><b style='color: {dir_color};'>Direction: {direction}</b></p>
+            <p><b style='color: #c084fc;'>Symbol: {symbol}</b></p>
+            <p><b style='color: white;'>Entry: {entry_str}</b></p>
+            <p><b style='color: {sl_color};'>Stop Loss: {sl_str}</b></p>
+            <p><b style='color: {tp_color};'>Take Profit: {tp_str}</b></p>
+        </div>
+        <div style='margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;'>
+            <b style='color: #f9e79f;'>Reasoning / Speculative Analysis:</b>
+            <p style='color: #f9e79f;'>{reasoning}</p>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -199,10 +226,10 @@ if uploaded_files:
 
         if len(uploaded_files) != 3:
             st.markdown(f"""
-            <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center;">
-                <p style="color: #f9e79f; font-weight: bold; font-size: 16px; margin: 0;">⚠️ ERROR: Invalid Image Count</p>
-                <p style="color: #f9e79f; font-size: 16px; margin: 5px 0;">You must fill exactly 3 upload spaces (Chart 1, Chart 2, and Chart 3) to proceed.</p>
-                <p style="color: #f9e79f; font-size: 16px; margin: 0;">Please re-upload the correct number of images.</p>
+            <div class='gold-warning-box'>
+                <div class='gold-warning-text'>⚠️ ERROR: Invalid Image Count</div>
+                <div class='gold-warning-text'>You must fill exactly 3 upload spaces (Chart 1, Chart 2, and Chart 3) to proceed.</div>
+                <div class='gold-warning-text'>Please re-upload the correct number of images.</div>
             </div>
             """, unsafe_allow_html=True)
             st.stop()
@@ -258,6 +285,8 @@ if uploaded_files:
         **For EACH of the TOP 3 setups, you MUST provide:**
         - A brief trigger description (e.g., "Buy when price sweeps 77,300")
         - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
+        
+        **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
         **CRITICAL FORMAT INSTRUCTION (for the entire response):**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
@@ -273,10 +302,11 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                st.markdown("""
-                <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
-                    <h4 style="color: #f9e79f; margin: 0;">📊 AI Analysis Summary</h4>
-                    <p style="color: #f9e79f; margin: 5px 0;">Loading... Please wait a few seconds while the AI scans the charts.</p>
+                # Show loading box
+                st.markdown(f"""
+                <div class='spec-box'>
+                    <div class='spec-header'>📊 AI Analysis Summary</div>
+                    <div class='spec-text'>Loading... Please wait a few seconds while the AI scans the charts.</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -296,9 +326,9 @@ if uploaded_files:
 
                 if ai_text is None:
                     st.markdown(f"""
-                    <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center;">
-                        <p style="color: #f9e79f; font-weight: bold; font-size: 16px; margin: 0;">🛑 AI CONNECTION ERROR</p>
-                        <p style="color: #f9e79f; font-size: 16px; margin: 5px 0;">All keys are exhausted right now. Please wait 30 seconds and try again.</p>
+                    <div class='gold-warning-box'>
+                        <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
+                        <div class='gold-warning-text'>All keys are exhausted right now. Please wait 30 seconds and try again.</div>
                     </div>
                     """, unsafe_allow_html=True)
                     st.stop()
@@ -307,21 +337,21 @@ if uploaded_files:
                     error_match = re.search(r"Validation Error\(s\):(.*)", ai_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
                     st.markdown(f"""
-                    <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center;">
-                        <p style="color: #f9e79f; font-weight: bold; font-size: 16px; margin: 0;">⚠️ ERROR: Image Validation Failed</p>
-                        <p style="color: #f9e79f; font-size: 16px; margin: 5px 0;">{clean_text(errors)}</p>
-                        <p style="color: #f9e79f; font-size: 16px; margin: 0;">Please re-upload the correct charts with matching symbols and try again.</p>
+                    <div class='gold-warning-box'>
+                        <div class='gold-warning-text'>⚠️ ERROR: Image Validation Failed</div>
+                        <div class='gold-warning-text'>{errors}</div>
+                        <div class='gold-warning-text'>Please re-upload the correct charts with matching symbols and try again.</div>
                     </div>
                     """, unsafe_allow_html=True)
                     st.stop()
 
                 parsed_data = parse_ai_response(ai_text)
 
+                # Determine direction and numbers
                 direction = "NEUTRAL"
                 symbol = "BTCUSD (Bitcoin)"
                 entry = sl = tp = None
                 reasoning = ""
-                top3_list = []
 
                 if parsed_data and parsed_data['direction'] != "NEUTRAL":
                     direction = parsed_data['direction']
@@ -329,41 +359,41 @@ if uploaded_files:
                     entry = parsed_data['entry']
                     sl = parsed_data['sl']
                     tp = parsed_data['tp']
+                    # Extract reasoning (everything before the labels)
                     reasoning = ai_text.split("Symbol:")[0] if "Symbol:" in ai_text else ai_text
                 else:
-                    top3_list = parse_top3_all(ai_text)
+                    # Try top3 first
+                    top3_nums = parse_top3_first(ai_text)
+                    if top3_nums:
+                        entry, sl, tp = top3_nums
+                    # Determine symbol
                     if parsed_data and parsed_data['symbol']:
                         symbol = parsed_data['symbol']
+                    # Direction stays NEUTRAL
+                    # Reasoning is the whole AI text
                     reasoning = ai_text
 
+                # Store summary data
                 st.session_state.summary_data = {
                     'direction': direction,
                     'symbol': symbol,
                     'entry': entry,
                     'sl': sl,
                     'tp': tp,
-                    'reasoning': reasoning,
-                    'top3_list': top3_list
+                    'reasoning': reasoning
                 }
 
-                # Auto-fill calculator with first setup if NEUTRAL
-                if direction == "NEUTRAL" and top3_list:
-                    st.session_state.auto_symbol = symbol
-                    st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
-                    st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
-                    st.session_state.tp_field = f"{top3_list[0]['tp']:.2f}"
+                # Auto-fill calculator
+                st.session_state.auto_symbol = symbol
+                if entry: st.session_state.entry_field = f"{entry:.2f}"
+                if sl: st.session_state.sl_field = f"{sl:.2f}"
+                if tp: st.session_state.tp_field = f"{tp:.2f}"
 
                 # Save to Supabase if entry exists
                 if entry and sl and tp:
                     if supabase_connected:
                         try:
                             cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{entry:.2f}", 'sl': f"{sl:.2f}", 'tp': f"{tp:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except: pass
-                elif top3_list:
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{top3_list[0]['entry']:.2f}", 'sl': f"{top3_list[0]['sl']:.2f}", 'tp': f"{top3_list[0]['tp']:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except: pass
 
@@ -383,102 +413,49 @@ if uploaded_files:
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
 
                     st.markdown(f"""
-                    <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center;">
-                        <p style="color: #f9e79f; font-weight: bold; font-size: 16px; margin: 0;">Scanned '{clean_text(symbol.split()[0])}' Successfully. AI speculations and high probability entries are below</p>
+                    <div class='gold-warning-box'>
+                        <div class='gold-warning-text'>Scanned '{symbol.split()[0]}' Successfully. AI speculations and high probability entries are below</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
                     st.markdown(f"""
-                    <div style="border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.3);">
-                        <div style="color: #d8b4fe !important; line-height: 1.6; font-size: 15px;">{clean_text(main_analysis.strip())}</div>
+                    <div class='analysis-box'>
+                        <div class='analysis-text'>{main_analysis.strip()}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
                     st.markdown(f"""
-                    <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
-                        <div style="font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px;">🏆 TOP 3 HIGHEST PROBABILITY SETUPS</div>
-                        <div style="color: #f9e79f !important; line-height: 1.6; font-size: 15px;">{clean_text(top3_text.strip())}</div>
+                    <div class='spec-box'>
+                        <div class='spec-header'>🏆 TOP 3 HIGHEST PROBABILITY SETUPS</div>
+                        <div class='spec-text'>{top3_text.strip()}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
                     st.markdown(f"""
-                    <div style="border: 2px solid #c084fc; background: linear-gradient(145deg, #1a1f2e, #2d1b4e); border-radius: 15px; padding: 15px; margin-top: 10px; box-shadow: 0 0 20px rgba(192, 132, 252, 0.4); text-align: left;">
-                        <div style="color: #d8b4fe !important; line-height: 1.5; font-size: 14px;"><strong>Full List of 10 Setups for Reference:</strong><br>{clean_text(full_list_text.strip())}</div>
+                    <div class='info-box'>
+                        <div class='info-text'><strong>Full List of 10 Setups for Reference:</strong><br>{full_list_text.strip()}</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
+
                     st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
+                # Force rerun to remove loading box and show final summary
                 st.rerun()
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
-# --- FINAL SUMMARY BOX (ONLY ONE, GUARANTEED CLEAN) ---
+# --- FINAL SUMMARY BOX (ONLY ONE) ---
 if 'summary_data' in st.session_state:
-    data = st.session_state.summary_data
-    direction = data['direction']
-    symbol = data['symbol']
-    entry = data['entry']
-    sl = data['sl']
-    tp = data['tp']
-    reasoning = clean_text(data['reasoning'])
-    top3_list = data.get('top3_list', [])
-
-    if direction == "BUY":
-        dir_label = "BUY"; dir_color = "#00FF00"
-    elif direction == "SELL":
-        dir_label = "SELL"; dir_color = "#FF0000"
-    else:
-        dir_label = "SPECULATIVE"; dir_color = "#FFD700"
-    
-    sl_color = "#FF0000"; tp_color = "#00FF00"
-
-    if top3_list:
-        setups_html = ""
-        for i, setup in enumerate(top3_list, 1):
-            desc = clean_text(setup['desc'])
-            setups_html += f"""
-            <div style="border: 1px solid #f1c40f; border-radius: 8px; padding: 10px; margin-top: 10px;">
-                <p style="color: #f9e79f; font-weight: bold; margin: 0;">Setup {i}: {desc}</p>
-                <p style="color: white; margin: 5px 0;">Entry: {setup['entry']:.2f}</p>
-                <p style="color: {sl_color}; margin: 5px 0;">Stop Loss: {setup['sl']:.2f}</p>
-                <p style="color: {tp_color}; margin: 5px 0;">Take Profit: {setup['tp']:.2f}</p>
-            </div>
-            """
-        html = f"""
-        <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
-            <div style="font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px;">📊 AI Analysis Summary</div>
-            <p><b style="color: {dir_color}; margin: 0;">Direction: {dir_label}</b></p>
-            <p><b style="color: #c084fc; margin: 0;">Symbol: {symbol}</b></p>
-            {setups_html}
-            <div style="margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;">
-                <b style="color: #f9e79f;">Reasoning / Speculative Analysis:</b>
-                <p style="color: #f9e79f;">{reasoning}</p>
-            </div>
-        </div>
-        """
-    else:
-        entry_str = f"{entry:.2f}" if entry else "N/A"
-        sl_str = f"{sl:.2f}" if sl else "N/A"
-        tp_str = f"{tp:.2f}" if tp else "N/A"
-        html = f"""
-        <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
-            <div style="font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px;">📊 AI Analysis Summary</div>
-            <p><b style="color: {dir_color}; margin: 0;">Direction: {dir_label}</b></p>
-            <p><b style="color: #c084fc; margin: 0;">Symbol: {symbol}</b></p>
-            <p><b style="color: white; margin: 0;">Entry: {entry_str}</b></p>
-            <p><b style="color: {sl_color}; margin: 0;">Stop Loss: {sl_str}</b></p>
-            <p><b style="color: {tp_color}; margin: 0;">Take Profit: {tp_str}</b></p>
-            <div style="margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;">
-                <b style="color: #f9e79f;">Reasoning / Speculative Analysis:</b>
-                <p style="color: #f9e79f;">{reasoning}</p>
-            </div>
-        </div>
-        """
-    st.markdown(html, unsafe_allow_html=True)
-    
-    # Clear the data so it doesn't show again on refresh
+    render_summary_box(
+        st.session_state.summary_data['direction'],
+        st.session_state.summary_data['symbol'],
+        st.session_state.summary_data['entry'],
+        st.session_state.summary_data['sl'],
+        st.session_state.summary_data['tp'],
+        st.session_state.summary_data['reasoning']
+    )
+    # Remove the data so it doesn't render twice on page refresh
     del st.session_state.summary_data
 
 st.divider()
