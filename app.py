@@ -102,6 +102,14 @@ def safe_float(s):
     try: return float(s)
     except: return None
 
+# --- FUNCTION TO REMOVE CODE FORMATTING (THE FIX) ---
+def remove_code_formatting(text):
+    # Remove triple backticks and code fences
+    text = re.sub(r'```', '', text)
+    # Remove single backticks used for inline code
+    text = text.replace('`', '')
+    return text
+
 # --- TEXT CLEANER ---
 def clean_analysis(text):
     text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
@@ -142,7 +150,6 @@ def parse_ai_response(text):
         elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
-        
         entry = safe_float(entry_match.group(1))
         sl = safe_float(sl_match.group(1))
         tp = safe_float(tp_match.group(1))
@@ -152,13 +159,10 @@ def parse_ai_response(text):
     return None
 
 def parse_top3_all(text):
-    """Extract all three top setups from the 'TOP 3 SPECULATIVE SETUPS' block."""
     top3_block = re.search(r"TOP 3 SPECULATIVE SETUPS.*", text, re.IGNORECASE | re.DOTALL)
     if not top3_block:
         return []
     block = top3_block.group(0)
-    # Each setup is expected to have a description, Entry, SL, TP. Use regex to find all groups.
-    # We'll split by numbered items (1., 2., 3.) and parse each.
     items = re.split(r'\n(?=\d\.)', block)
     setups = []
     for item in items:
@@ -174,32 +178,31 @@ def parse_top3_all(text):
             if e and s and t:
                 description = item.strip()
                 setups.append({'desc': description, 'entry': e, 'sl': s, 'tp': t})
-    return setups[:3]  # only top 3
+    return setups[:3]
 
-# --- FUNCTION TO RENDER THE SINGLE SUMMARY BOX ---
+# --- FUNCTION TO RENDER SUMMARY BOX (WITH CLEANED TEXT) ---
 def render_summary_box(direction, symbol, entry, sl, tp, reasoning, top3_list=None):
-    # Set direction label and color
     if direction == "BUY":
-        dir_label = "BUY"
-        dir_color = "#00FF00"
+        dir_label = "BUY"; dir_color = "#00FF00"
     elif direction == "SELL":
-        dir_label = "SELL"
-        dir_color = "#FF0000"
+        dir_label = "SELL"; dir_color = "#FF0000"
     else:
-        dir_label = "SPECULATIVE"
-        dir_color = "#FFD700"
+        dir_label = "SPECULATIVE"; dir_color = "#FFD700"
     
-    sl_color = "#FF0000"
-    tp_color = "#00FF00"
+    sl_color = "#FF0000"; tp_color = "#00FF00"
     
-    # If top3_list is provided, we show that instead of single entry
+    # Clean the reasoning to remove code formatting
+    reasoning = remove_code_formatting(reasoning)
+
     if top3_list:
         setups_html = ""
         for i, setup in enumerate(top3_list, 1):
-            desc = setup['desc'].replace('<', '&lt;').replace('>', '&gt;')
+            desc = setup['desc']
+            desc = remove_code_formatting(desc)  # Clean this too
+            desc = desc.replace('<', '&lt;').replace('>', '&gt;')
             setups_html += f"""
             <div style="border: 1px solid #f1c40f; border-radius: 8px; padding: 10px; margin-top: 10px;">
-                <p style="color: #f9e79f; font-weight: bold;">Setup {i}: {desc.split('.')[0] if '.' in desc else desc}</p>
+                <p style="color: #f9e79f; font-weight: bold;">Setup {i}: {desc}</p>
                 <p style="color: white;">Entry: {setup['entry']:.2f}</p>
                 <p style="color: {sl_color};">Stop Loss: {setup['sl']:.2f}</p>
                 <p style="color: {tp_color};">Take Profit: {setup['tp']:.2f}</p>
@@ -404,7 +407,6 @@ if uploaded_files:
                     tp = parsed_data['tp']
                     reasoning = ai_text.split("Symbol:")[0] if "Symbol:" in ai_text else ai_text
                 else:
-                    # NEUTRAL: Get the top 3 setups
                     top3_list = parse_top3_all(ai_text)
                     if parsed_data and parsed_data['symbol']:
                         symbol = parsed_data['symbol']
@@ -428,7 +430,7 @@ if uploaded_files:
                     st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
                     st.session_state.tp_field = f"{top3_list[0]['tp']:.2f}"
 
-                # Save to Supabase if entry exists (either direct or first top3)
+                # Save to Supabase if entry exists
                 if entry and sl and tp:
                     if supabase_connected:
                         try:
@@ -502,7 +504,6 @@ if 'summary_data' in st.session_state:
         data['reasoning'],
         data.get('top3_list', [])
     )
-    # Remove the data so it doesn't render twice on page refresh
     del st.session_state.summary_data
 
 st.divider()
