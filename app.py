@@ -55,13 +55,12 @@ try:
     supabase_connected = True
 except: supabase_connected = False
 
-# --- RELIABLE COOKIE-BASED DEVICE TRACKING ---
+# --- COOKIE DEVICE TRACKING ---
 cookies = CookieController()
 device_id = cookies.get("brilliant_trader_device_id")
 if not device_id:
     device_id = "device-" + str(uuid.uuid4())
     cookies.set("brilliant_trader_device_id", device_id, max_age=31536000)
-
 st.session_state.session_id = device_id
 if 'total_users' not in st.session_state: st.session_state.total_users = 0
 if 'active_users' not in st.session_state: st.session_state.active_users = 0
@@ -79,7 +78,7 @@ def track_visit():
         except: pass
 track_visit()
 
-# --- USAGE COUNTER LOGIC ---
+# --- USAGE COUNTER ---
 USAGE_FILE = "usage_count.txt"
 DAILY_LIMIT = 20
 TOTAL_LIMIT = len(KEYS_LIST) * DAILY_LIMIT
@@ -111,13 +110,11 @@ def clean_analysis(text):
     text = text.replace("Speculative Setup:", "\n\n**🚨 SPECULATIVE SETUP:**")
     return text
 
-# --- PARSE VISUAL DATA (Extracts Setups & Chart Scale) ---
+# --- EXTRACT VISUAL DATA ---
 def parse_visual_data(text):
     setups = []
-    # Extract Chart Top and Bottom for scaling
     top_match = re.search(r"Chart Top Price:\s*([\d.]+)", text, re.IGNORECASE)
     bottom_match = re.search(r"Chart Bottom Price:\s*([\d.]+)", text, re.IGNORECASE)
-    
     top_price = float(top_match.group(1)) if top_match else None
     bottom_price = float(bottom_match.group(1)) if bottom_match else None
     
@@ -126,35 +123,27 @@ def parse_visual_data(text):
         entry_match = re.search(rf"Setup {i} Entry:\s*([\d.]+)", text, re.IGNORECASE)
         sl_match = re.search(rf"Setup {i} Stop Loss:\s*([\d.]+)", text, re.IGNORECASE)
         tp_match = re.search(rf"Setup {i} Take Profit:\s*([\d.]+)", text, re.IGNORECASE)
-        
         if dir_match and entry_match and sl_match and tp_match:
-            setups.append({
-                'direction': dir_match.group(1).upper(),
-                'entry': float(entry_match.group(1)),
-                'sl': float(sl_match.group(1)),
-                'tp': float(tp_match.group(1))
-            })
-            
+            setups.append({'direction': dir_match.group(1).upper(), 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))})
     return setups, top_price, bottom_price
 
-# --- DRAW SETUP ON IMAGE (Using Chart Scale) ---
+# --- DRAW SETUP ON IMAGE ---
 def draw_setup_on_image(img, setup, top_price, bottom_price):
     img_copy = img.copy()
     draw = ImageDraw.Draw(img_copy)
     width, height = img_copy.size
-    
     try:
         font = ImageFont.truetype("arial.ttf", 20)
     except:
         font = ImageFont.load_default()
     
-    # If scale is missing, fallback to min/max of the setups
+    # If no chart scale given by AI, fallback to setup's min/max
     if not top_price or not bottom_price or top_price == bottom_price:
         prices = [setup['entry'], setup['sl'], setup['tp']]
         bottom_price = min(prices)
         top_price = max(prices)
         if bottom_price == top_price: bottom_price -= 1; top_price += 1
-    
+
     # Map price to Y coordinate (Top=High, Bottom=Low)
     def y_map(price):
         return height - 30 - ((price - bottom_price) / (top_price - bottom_price)) * (height - 60)
@@ -163,28 +152,23 @@ def draw_setup_on_image(img, setup, top_price, bottom_price):
     sl_y = y_map(setup['sl'])
     tp_y = y_map(setup['tp'])
     
-    # Colors
-    if setup['direction'] == 'BUY':
-        color = (0, 200, 83)  # Green
-    else:
-        color = (255, 82, 82)  # Red
+    color = (0, 200, 83) if setup['direction'] == 'BUY' else (255, 82, 82)
         
     # Draw lines
-    draw.line([(width * 0.2, entry_y), (width * 0.8, entry_y)], fill=(200, 200, 200), width=2) # Entry Grey
-    draw.line([(width * 0.2, sl_y), (width * 0.8, sl_y)], fill=(255, 82, 82), width=3) # SL Red
-    draw.line([(width * 0.2, tp_y), (width * 0.8, tp_y)], fill=(0, 200, 83), width=3) # TP Green
+    draw.line([(width * 0.2, entry_y), (width * 0.8, entry_y)], fill=(200, 200, 200), width=2)
+    draw.line([(width * 0.2, sl_y), (width * 0.8, sl_y)], fill=(255, 82, 82), width=3)
+    draw.line([(width * 0.2, tp_y), (width * 0.8, tp_y)], fill=(0, 200, 83), width=3)
     
-    # Draw Text
+    # Text
     draw.text((5, entry_y - 10), f"Entry: {setup['entry']}", fill=(200, 200, 200), font=font)
     draw.text((5, sl_y - 10), f"SL: {setup['sl']}", fill=(255, 82, 82), font=font)
     draw.text((5, tp_y - 10), f"TP: {setup['tp']}", fill=(0, 200, 83), font=font)
     
-    # Draw Arrow
+    # Arrow
     if setup['direction'] == 'BUY':
         draw.polygon([(width * 0.5, entry_y - 25), (width * 0.45, entry_y - 5), (width * 0.55, entry_y - 5)], fill=color)
     else:
         draw.polygon([(width * 0.5, entry_y + 25), (width * 0.45, entry_y + 5), (width * 0.55, entry_y + 5)], fill=color)
-        
     return img_copy
 
 # --- SYMBOLS & SESSION ---
@@ -212,10 +196,8 @@ def parse_ai_response(text):
         elif sym in ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"]: sym = "EURUSD (Forex)"
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
-        
         if "N/A" in [entry_match.group(1), sl_match.group(1), tp_match.group(1)]:
             return {'symbol': sym, 'direction': direction, 'entry': None, 'sl': None, 'tp': None}
-            
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
     return None
 
@@ -232,13 +214,11 @@ with st.sidebar:
     st.divider()
     st.markdown(f"⚙️ **Keys Loaded:** {len(KEYS_LIST)}")
     st.divider()
-
     st.subheader("📈 Upload 3 Charts : 4HR , 30MIN , 5MIN")
     col1, col2, col3 = st.columns(3)
     with col1: chart1 = st.file_uploader("Chart 1", type=["png", "jpg", "jpeg"], key="chart_1")
     with col2: chart2 = st.file_uploader("Chart 2", type=["png", "jpg", "jpeg"], key="chart_2")
     with col3: chart3 = st.file_uploader("Chart 3", type=["png", "jpg", "jpeg"], key="chart_3")
-    
     uploaded_files = [x for x in [chart1, chart2, chart3] if x is not None]
 
 st.divider()
@@ -277,7 +257,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # UPDATED PROMPT: Includes VISUAL SCALE data for the 5-min chart
+        # PROMPT WITH Y-AXIS SCALE
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -337,13 +317,11 @@ if uploaded_files:
         DO NOT calculate lot sizes, leverage, or margin.
         """
 
-        success = False
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
                 random.shuffle(KEYS_LIST)
                 ai_text = None
-
                 for key in KEYS_LIST:
                     try:
                         client = genai.Client(api_key=key)
@@ -352,8 +330,7 @@ if uploaded_files:
                         ai_text = response.text
                         increment_usage()
                         break
-                    except Exception:
-                        continue
+                    except Exception: continue
 
                 if ai_text is None:
                     st.markdown(f"""
@@ -377,29 +354,52 @@ if uploaded_files:
                     """, unsafe_allow_html=True)
                     st.stop()
 
-                parsed_data = parse_ai_response(ai_text)
-                visual_setups, top_price, bottom_price = parse_visual_data(ai_text) # Extract setups & scale
-                
+                # EXTRACT VISUALS
+                visual_setups, top_price, bottom_price = parse_visual_data(ai_text)
                 st.session_state.visual_setups = visual_setups if visual_setups else []
                 st.session_state.chart_scale = (top_price, bottom_price)
 
-                # New Fallback
-                if parsed_data is None:
-                    full_text = clean_analysis(ai_text)
-                    st.warning("The AI didn't format the numbers perfectly. Showing the full analysis below. You can manually add the numbers to the calculator if you wish.")
-                    with st.container(border=True):
-                        st.markdown(full_text)
-                    st.stop()
+                # CLEAN AND SPLIT ANALYSIS
+                full_text = clean_analysis(ai_text)
+                split_marker = "🚨 SPECULATIVE SETUP:"
+                if split_marker in full_text:
+                    main_analysis, spec_part = full_text.split(split_marker, 1)
+                else:
+                    main_analysis, spec_part = full_text, "No speculative setup provided."
 
-                if parsed_data['direction'] == "NEUTRAL":
-                    # Show Speculative
-                    full_text = clean_analysis(ai_text)
-                    split_marker = "🚨 SPECULATIVE SETUP:"
-                    if split_marker in full_text:
-                        main_analysis, spec_part = full_text.split(split_marker, 1)
-                    else:
-                        main_analysis, spec_part = full_text, "No speculative setup provided."
+                # --- THIS IS THE FIX: ALWAYS SHOW THE FULL ANALYSIS BLOCK FIRST ---
+                st.markdown(f"""
+                <div class='analysis-box'>
+                    <div class='analysis-text'>{main_analysis.strip()}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
+                # PARSE DATA
+                parsed_data = parse_ai_response(ai_text)
+
+                # CHECK DIRECTION
+                if parsed_data and parsed_data['direction'] != "NEUTRAL" and parsed_data['entry'] is not None:
+                    # ACTIVE TRADE
+                    sym = parsed_data['symbol']
+                    st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
+                    st.session_state.auto_symbol = sym
+                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
+                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
+                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
+
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except: pass
+
+                    st.success(f"✅ Analysis Complete ({parsed_data['direction']})")
+                    st.rerun()
+
+                else:
+                    # NEUTRAL / SPECULATIVE
+                    # (The Full Analysis Block is already shown above!)
+                    
                     top3_text = spec_part
                     full_list_text = spec_part
                     if "🔥 TOP 3 SPECULATIVE SETUPS" in spec_part:
@@ -410,12 +410,6 @@ if uploaded_files:
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
                         <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 ranked speculative setups with their entry, stop, and target levels.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown(f"""
-                    <div class='analysis-box'>
-                        <div class='analysis-text'>{main_analysis.strip()}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -434,24 +428,6 @@ if uploaded_files:
                     
                     st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
-                else:
-                    # Active Trade
-                    sym = parsed_data['symbol']
-                    st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
-                    st.session_state.auto_symbol = sym
-                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
-                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
-                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
-
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except: pass
-
-                    st.success("✅ Analysis Complete!")
-                    st.rerun()
-
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
@@ -466,25 +442,17 @@ st.divider()
 if st.session_state.visual_setups and len(uploaded_files or []) == 3:
     st.markdown("### 🎯 Visualize Setups (Using 5-Min Chart Scale)")
     if st.button("📈 Generate Visuals for Top 3 Setups"):
-        # Use the last uploaded image (presumed to be the 5-min chart)
         base_image = Image.open(uploaded_files[-1])
-        
-        # Get the scale from the AI
         top_price, bottom_price = st.session_state.chart_scale
         
-        # Create 3 images based on the chart scale
         img1 = draw_setup_on_image(base_image, st.session_state.visual_setups[0], top_price, bottom_price)
         img2 = draw_setup_on_image(base_image, st.session_state.visual_setups[1], top_price, bottom_price)
         img3 = draw_setup_on_image(base_image, st.session_state.visual_setups[2], top_price, bottom_price)
         
-        # Display them (The analysis block above remains untouched)
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.image(img1, caption=f"Setup 1 ({st.session_state.visual_setups[0]['direction']})")
-        with c2:
-            st.image(img2, caption=f"Setup 2 ({st.session_state.visual_setups[1]['direction']})")
-        with c3:
-            st.image(img3, caption=f"Setup 3 ({st.session_state.visual_setups[2]['direction']})")
+        with c1: st.image(img1, caption=f"Setup 1 ({st.session_state.visual_setups[0]['direction']})")
+        with c2: st.image(img2, caption=f"Setup 2 ({st.session_state.visual_setups[1]['direction']})")
+        with c3: st.image(img3, caption=f"Setup 3 ({st.session_state.visual_setups[2]['direction']})")
 
 st.divider()
 
