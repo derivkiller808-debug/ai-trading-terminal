@@ -6,7 +6,8 @@ import uuid
 import random
 import hashlib
 from datetime import datetime, timezone, timedelta
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+import pytesseract
 from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
@@ -110,14 +111,9 @@ def clean_analysis(text):
     text = text.replace("Speculative Setup:", "\n\n**🚨 SPECULATIVE SETUP:**")
     return text
 
-# --- EXTRACT VISUAL DATA ---
+# --- EXTRACT VISUAL DATA (From AI Text) ---
 def parse_visual_data(text):
     setups = []
-    top_match = re.search(r"Chart Top Price:\s*([\d.]+)", text, re.IGNORECASE)
-    bottom_match = re.search(r"Chart Bottom Price:\s*([\d.]+)", text, re.IGNORECASE)
-    top_price = float(top_match.group(1)) if top_match else None
-    bottom_price = float(bottom_match.group(1)) if bottom_match else None
-    
     for i in range(1, 4):
         dir_match = re.search(rf"Setup {i} Direction:\s*([A-Z]+)", text, re.IGNORECASE)
         entry_match = re.search(rf"Setup {i} Entry:\s*([\d.]+)", text, re.IGNORECASE)
@@ -125,35 +121,100 @@ def parse_visual_data(text):
         tp_match = re.search(rf"Setup {i} Take Profit:\s*([\d.]+)", text, re.IGNORECASE)
         if dir_match and entry_match and sl_match and tp_match:
             setups.append({'direction': dir_match.group(1).upper(), 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))})
-    return setups, top_price, bottom_price
+    return setups
 
-# --- DRAW SETUP ON IMAGE ---
-def draw_setup_on_image(img, setup, top_price, bottom_price):
+# --- NEW: SCAN THE IMAGE WITH OCR TO FIND EXACT PRICES ---
+def get_price_to_y_mapping(img):
+    """
+    Scans the right side of the chart, reads the Y-axis price labels,
+    and returns a dictionary mapping {'price': y_pixel_coordinate}.
+    """
+    # Convert to grayscale, enhance contrast, and invert if needed
+    img_gray = ImageOps.grayscale(img)
+    
+    # Crop only the right side (Y-axis labels)
+    width, height = img_gray.size
+    # Assuming the labels are on the right 15% of the image
+    right_side = img_gray.crop((int(width * 0.85), 0, width, height))
+    
+    # Use OCR to find text and bounding boxes
+    data = pytesseract.image_to_data(right_side, output_type=pytesseract.Output.DICT)
+    
+    price_to_y = {}
+    
+    # Iterate through OCR results
+    for i in range(len(data['text'])):
+        text = data['text'][i].strip()
+        # Clean up common OCR mistakes (e.g., '17,600' -> 17600)
+        text_clean = text.replace(',', '').replace(' ', '').replace('$', '')
+        try:
+            price = float(text_clean)
+            # Only consider reasonable prices (e.g., > 10)
+            if price > 10:
+                # The bounding box gives (left, top, width, height) relative to right_side crop
+                top = data['top'][i]
+                height_box = data['height'][i]
+                y_center = top + (height_box / 2)
+                price_to_y[price] = y_center
+        except ValueError:
+            continue
+            
+    return price_to_y
+
+# --- NEW: Draw Lines Using Exact Price-to-Y Mapping ---
+def draw_setup_exact(img, setup, price_to_y):
     img_copy = img.copy()
     draw = ImageDraw.Draw(img_copy)
     width, height = img_copy.size
+    
     try:
         font = ImageFont.truetype("arial.ttf", 20)
     except:
         font = ImageFont.load_default()
+        
+    # Find the Y-coordinate for a given price by interpolating if necessary
+    def get_y_for_price(price):
+        if not price_to_y:
+            # Fallback to center if no OCR found
+            return height / 2
+        
+        # Find closest prices in the map
+        closest_prices = sorted(price_to_y.keys(), key=lambda p: abs(p - price))
+        
+        # Check if we have an exact match
+        if closest_prices and abs(closest_prices[0] - price) < 0.01:
+            return price_to_y[closest_prices[0]]
+        
+        # If not exact, interpolate between the two closest
+        if len(closest_prices) >= 2:
+            price_low = closest_prices[1]  # (Or figure out which is lower)
+            price_high = closest_prices[0]
+            # Actually, we need the low and high of the range.
+            # Sort them properly
+            all_prices = sorted(price_to_y.keys())
+            
+            # Find surrounding prices
+            lower = max([p for p in all_prices if p < price], default=None)
+            upper = min([p for p in all_prices if p > price], default=None)
+            
+            if lower and upper:
+                y_low = price_to_y[lower]
+                y_high = price_to_y[upper]
+                # Linear interpolation: Price goes from lower to upper, Y goes from low to high
+                ratio = (price - lower) / (upper - lower)
+                y = y_low + (ratio * (y_high - y_low))
+                return y
+                
+        # If no interpolation possible, return closest
+        return price_to_y[closest_prices[0]]
     
-    # If no chart scale given by AI, fallback to setup's min/max
-    if not top_price or not bottom_price or top_price == bottom_price:
-        prices = [setup['entry'], setup['sl'], setup['tp']]
-        bottom_price = min(prices)
-        top_price = max(prices)
-        if bottom_price == top_price: bottom_price -= 1; top_price += 1
-
-    # Map price to Y coordinate (Top=High, Bottom=Low)
-    def y_map(price):
-        return height - 30 - ((price - bottom_price) / (top_price - bottom_price)) * (height - 60)
-    
-    entry_y = y_map(setup['entry'])
-    sl_y = y_map(setup['sl'])
-    tp_y = y_map(setup['tp'])
+    # Calculate Y positions
+    entry_y = get_y_for_price(setup['entry'])
+    sl_y = get_y_for_price(setup['sl'])
+    tp_y = get_y_for_price(setup['tp'])
     
     color = (0, 200, 83) if setup['direction'] == 'BUY' else (255, 82, 82)
-        
+    
     # Draw lines
     draw.line([(width * 0.2, entry_y), (width * 0.8, entry_y)], fill=(200, 200, 200), width=2)
     draw.line([(width * 0.2, sl_y), (width * 0.8, sl_y)], fill=(255, 82, 82), width=3)
@@ -169,6 +230,7 @@ def draw_setup_on_image(img, setup, top_price, bottom_price):
         draw.polygon([(width * 0.5, entry_y - 25), (width * 0.45, entry_y - 5), (width * 0.55, entry_y - 5)], fill=color)
     else:
         draw.polygon([(width * 0.5, entry_y + 25), (width * 0.45, entry_y + 5), (width * 0.55, entry_y + 5)], fill=color)
+        
     return img_copy
 
 # --- SYMBOLS & SESSION ---
@@ -179,8 +241,10 @@ if 'sl_field' not in st.session_state: st.session_state.sl_field = ""
 if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
+if 'main_analysis_text' not in st.session_state: st.session_state.main_analysis_text = None
+if 'spec_text' not in st.session_state: st.session_state.spec_text = None
+if 'full_list_text' not in st.session_state: st.session_state.full_list_text = None
 if 'visual_setups' not in st.session_state: st.session_state.visual_setups = []
-if 'chart_scale' not in st.session_state: st.session_state.chart_scale = (None, None)
 
 # --- PARSING ---
 def parse_ai_response(text):
@@ -223,6 +287,14 @@ with st.sidebar:
 
 st.divider()
 
+# --- DISPLAY PERSISTENT ANALYSIS ---
+if st.session_state.main_analysis_text:
+    st.markdown(f"""
+    <div class='analysis-box'>
+        <div class='analysis-text'>{st.session_state.main_analysis_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
@@ -257,23 +329,20 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # PROMPT WITH Y-AXIS SCALE
+        # PROMPT (Simple, focused on actual price levels)
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
-
         You are provided with 3 charts.
 
         **CRITICAL VALIDATION RULES:**
-        Before analyzing, validate the 3 images. Do all images have the matching symbol? Are the timeframes clearly 4H, 30M, and 5M? Are they zoomed out well?
-        **Output Validation Status at the very top:**
+        Do all images have the matching symbol? Are the timeframes clearly 4H, 30M, and 5M? Are they zoomed out well?
         Validation: PASS  OR  Validation: FAIL
         Validation Error(s): (List reasons if FAIL, otherwise state "None")
 
         **HARD RULES:**
-        Do not trade counter-trend. If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
+        If 4H is Bearish, only SELL. If 4H is Bullish, only BUY.
         If 4H, 30M, and 5M do NOT agree, output NEUTRAL.
         If TP distance is NOT at least 2x SL distance, output NEUTRAL.
-        If chart is choppy or unclear, output NEUTRAL.
 
         **OUTPUT FORMAT:**
         **📊 4H Trend Analysis:** (Break down macro bias and S/R levels).
@@ -282,18 +351,13 @@ if uploaded_files:
         **⚖️ Final Verdict:** (State BUY, SELL, or NEUTRAL).
 
         **IF YOU SAY NEUTRAL (SPECULATIVE SETUP SECTION):**
-        You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
-        - First, brainstorm **EXACTLY TEN (10) individual speculative setups** that could support an entry. Use "Buy when..." or "Sell when..." for each. Number them 1 to 10. They do NOT have to happen all at the same time.
-        - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
-        - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS (RANKED):**
+        - Brainstorm 10 individual speculative setups using "Buy when..." or "Sell when...". Number them 1 to 10.
+        - Then write the BEST THREE under "🔥 TOP 3 SPECULATIVE SETUPS (RANKED):"
         - For each Top 3 setup, include: Title, Direction, Entry, Stop Loss, Take Profit, and Confluence Trigger.
 
-        **CRITICAL FORMAT INSTRUCTION (PARSEABLE DATA):**
-        After the main text block, **MUST** output the following block exactly at the end so the system can draw visuals. You MUST read the Y-Axis scale from the 5-minute chart and give me the top and bottom prices.
-
+        **CRITICAL FORMAT INSTRUCTION:**
+        After the main text, output these exact lines:
         VISUAL SETUP DATA
-        Chart Top Price: (The highest price level visible on the 5-min chart Y-axis)
-        Chart Bottom Price: (The lowest price level visible on the 5-min chart Y-axis)
         Setup 1 Direction: (BUY or SELL)
         Setup 1 Entry: (Value)
         Setup 1 Stop Loss: (Value)
@@ -307,14 +371,12 @@ if uploaded_files:
         Setup 3 Stop Loss: (Value)
         Setup 3 Take Profit: (Value)
 
-        **END OF RESPONSE:**
+        **END:**
         Symbol:
         Direction: (BUY, SELL, or NEUTRAL)
         Entry: (Value or N/A)
         Stop Loss: (Value or N/A)
         Take Profit: (Value or N/A)
-
-        DO NOT calculate lot sizes, leverage, or margin.
         """
 
         try:
@@ -333,33 +395,18 @@ if uploaded_files:
                     except Exception: continue
 
                 if ai_text is None:
-                    st.markdown(f"""
-                    <div class='gold-warning-box'>
-                        <div class='gold-warning-text'>🛑 AI CONNECTION ERROR</div>
-                        <div class='gold-warning-text'>All keys are exhausted right now. Please wait 30 seconds and try again.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.warning("All keys are exhausted right now. Please wait 30 seconds and try again.")
                     st.stop()
 
-                # CHECK VALIDATION
                 if re.search(r"Validation:\s*FAIL", ai_text, re.IGNORECASE):
                     error_match = re.search(r"Validation Error\(s\):(.*)", ai_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
-                    st.markdown(f"""
-                    <div class='gold-warning-box'>
-                        <div class='gold-warning-text'>⚠️ ERROR: Image Validation Failed</div>
-                        <div class='gold-warning-text'>{errors}</div>
-                        <div class='gold-warning-text'>Please re-upload the correct charts with matching symbols and try again.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.warning(f"ERROR: Image Validation Failed. {errors}")
                     st.stop()
 
-                # EXTRACT VISUALS
-                visual_setups, top_price, bottom_price = parse_visual_data(ai_text)
+                visual_setups = parse_visual_data(ai_text)
                 st.session_state.visual_setups = visual_setups if visual_setups else []
-                st.session_state.chart_scale = (top_price, bottom_price)
 
-                # CLEAN AND SPLIT ANALYSIS
                 full_text = clean_analysis(ai_text)
                 split_marker = "🚨 SPECULATIVE SETUP:"
                 if split_marker in full_text:
@@ -367,19 +414,12 @@ if uploaded_files:
                 else:
                     main_analysis, spec_part = full_text, "No speculative setup provided."
 
-                # --- THIS IS THE FIX: ALWAYS SHOW THE FULL ANALYSIS BLOCK FIRST ---
-                st.markdown(f"""
-                <div class='analysis-box'>
-                    <div class='analysis-text'>{main_analysis.strip()}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.session_state.main_analysis_text = main_analysis.strip()
+                st.session_state.spec_text = spec_part.strip()
 
-                # PARSE DATA
                 parsed_data = parse_ai_response(ai_text)
 
-                # CHECK DIRECTION
                 if parsed_data and parsed_data['direction'] != "NEUTRAL" and parsed_data['entry'] is not None:
-                    # ACTIVE TRADE
                     sym = parsed_data['symbol']
                     st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
                     st.session_state.auto_symbol = sym
@@ -397,19 +437,16 @@ if uploaded_files:
                     st.rerun()
 
                 else:
-                    # NEUTRAL / SPECULATIVE
-                    # (The Full Analysis Block is already shown above!)
-                    
-                    top3_text = spec_part
-                    full_list_text = spec_part
-                    if "🔥 TOP 3 SPECULATIVE SETUPS" in spec_part:
-                        full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS", 1)
+                    top3_text = st.session_state.spec_text
+                    full_list_text = st.session_state.spec_text
+                    if "🔥 TOP 3 SPECULATIVE SETUPS" in st.session_state.spec_text:
+                        full_list_text, top3_text = st.session_state.spec_text.split("🔥 TOP 3 SPECULATIVE SETUPS", 1)
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS" + top3_text
 
                     st.markdown(f"""
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 ranked speculative setups with their entry, stop, and target levels.</div>
+                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 ranked speculative setups.</div>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -426,7 +463,7 @@ if uploaded_files:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
+                    st.info("These are NOT active trades. You can manually type the levels into the calculator below once the trigger is confirmed.")
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
@@ -438,21 +475,28 @@ if uploaded_files:
 
 st.divider()
 
-# --- VISUALIZATION BUTTON (Uses 5-min chart and keeps analysis intact) ---
+# --- VISUALIZATION BUTTON (NOW WITH OCR!) ---
 if st.session_state.visual_setups and len(uploaded_files or []) == 3:
-    st.markdown("### 🎯 Visualize Setups (Using 5-Min Chart Scale)")
+    st.markdown("### 🎯 Visualize Setups (Scanning Image for Exact Price)")
     if st.button("📈 Generate Visuals for Top 3 Setups"):
         base_image = Image.open(uploaded_files[-1])
-        top_price, bottom_price = st.session_state.chart_scale
         
-        img1 = draw_setup_on_image(base_image, st.session_state.visual_setups[0], top_price, bottom_price)
-        img2 = draw_setup_on_image(base_image, st.session_state.visual_setups[1], top_price, bottom_price)
-        img3 = draw_setup_on_image(base_image, st.session_state.visual_setups[2], top_price, bottom_price)
+        # 1. Scan the image with OCR
+        with st.spinner("Scanning Y-Axis for exact price points..."):
+            price_to_y = get_price_to_y_mapping(base_image)
         
-        c1, c2, c3 = st.columns(3)
-        with c1: st.image(img1, caption=f"Setup 1 ({st.session_state.visual_setups[0]['direction']})")
-        with c2: st.image(img2, caption=f"Setup 2 ({st.session_state.visual_setups[1]['direction']})")
-        with c3: st.image(img3, caption=f"Setup 3 ({st.session_state.visual_setups[2]['direction']})")
+        if not price_to_y:
+            st.warning("Could not read the Y-axis labels. Please ensure the chart is high quality and zoomed out well.")
+        else:
+            # 2. Draw the 3 setups based on the exact price-to-y mapping
+            img1 = draw_setup_exact(base_image, st.session_state.visual_setups[0], price_to_y)
+            img2 = draw_setup_exact(base_image, st.session_state.visual_setups[1], price_to_y)
+            img3 = draw_setup_exact(base_image, st.session_state.visual_setups[2], price_to_y)
+            
+            c1, c2, c3 = st.columns(3)
+            with c1: st.image(img1, caption=f"Setup 1 ({st.session_state.visual_setups[0]['direction']})")
+            with c2: st.image(img2, caption=f"Setup 2 ({st.session_state.visual_setups[1]['direction']})")
+            with c3: st.image(img3, caption=f"Setup 3 ({st.session_state.visual_setups[2]['direction']})")
 
 st.divider()
 
