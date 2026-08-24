@@ -164,21 +164,16 @@ def parse_top3_all(text):
             s = safe_float(sl_match.group(1))
             t = safe_float(tp_match.group(1))
             if e and s and t:
-                desc = clean_text(item.strip())
-                setups.append({'desc': desc, 'entry': e, 'sl': s, 'tp': t})
+                desc = item.strip()
+                # Determine direction from the description (Buy when / Sell when)
+                if "Buy when" in desc or "buy" in desc.lower():
+                    spec_direction = "BUY"
+                elif "Sell when" in desc or "sell" in desc.lower():
+                    spec_direction = "SELL"
+                else:
+                    spec_direction = "NEUTRAL"
+                setups.append({'desc': clean_text(desc), 'entry': e, 'sl': s, 'tp': t, 'spec_direction': spec_direction})
     return setups[:3]
-
-# --- NEW SMART SELECTION LOGIC ---
-def select_best_setup(top3_list):
-    if not top3_list:
-        return None
-    # Filter for setups mentioning Order Block / OB / Breaker Block
-    for setup in top3_list:
-        text_lower = setup['desc'].lower()
-        if 'order block' in text_lower or 'orderblock' in text_lower or 'breaker block' in text_lower:
-            return setup
-    # Fallback to first setup
-    return top3_list[0]
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -238,6 +233,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
+        # --- UPDATED PROMPT: OB/BB Priority ---
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -267,11 +263,12 @@ if uploaded_files:
         - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
         - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS:**
         
-        **For EACH of the TOP 3 setups, you MUST provide:**
-        - A brief trigger description (e.g., "Buy when price sweeps 77,300")
-        - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
+        **CRITICAL RANKING RULE:**
+        When you rank the setups to pick the TOP 3, you MUST ensure that the **#1 setup** is the one that involves **Order Blocks (OB)** or **Breaker Blocks (BB)**. If there is a setup that uses OB/BB, it must be placed at number 1. If no OB/BB setup exists, use the highest probability setup.
         
-        **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
+        **For EACH of the TOP 3 setups, you MUST provide:**
+        - A brief trigger description (e.g., "Buy when price sweeps 77,300 at the Order Block")
+        - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
 
         **CRITICAL FORMAT INSTRUCTION (for the entire response):**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
@@ -350,12 +347,9 @@ if uploaded_files:
                         symbol = parsed_data['symbol']
                     reasoning = ai_text
                     
-                    # SMART SELECTION: Pick the best setup (prioritizing Order Blocks)
-                    best_setup = select_best_setup(top3_list)
-                    if best_setup:
-                        entry = best_setup['entry']
-                        sl = best_setup['sl']
-                        tp = best_setup['tp']
+                    # #1 setup should be the OB/BB one (automatically ensured by prompt, but let's verify)
+                    if top3_list and top3_list[0].get('spec_direction'):
+                        direction = top3_list[0]['spec_direction']  # This will be "BUY" or "SELL"
 
                 st.session_state.summary_data = {
                     'direction': direction,
@@ -367,18 +361,24 @@ if uploaded_files:
                     'top3_list': top3_list
                 }
 
-                # Auto-fill calculator with the smart-selected setup if NEUTRAL
-                if direction == "NEUTRAL" and entry:
+                # Auto-fill calculator with first setup if NEUTRAL
+                if direction in ["BUY", "SELL"] and top3_list:
                     st.session_state.auto_symbol = symbol
-                    st.session_state.entry_field = f"{entry:.2f}"
-                    st.session_state.sl_field = f"{sl:.2f}"
-                    st.session_state.tp_field = f"{tp:.2f}"
+                    st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
+                    st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
+                    st.session_state.tp_field = f"{top3_list[0]['tp']:.2f}"
 
                 # Save to Supabase if entry exists
                 if entry and sl and tp:
                     if supabase_connected:
                         try:
                             cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{entry:.2f}", 'sl': f"{sl:.2f}", 'tp': f"{tp:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except: pass
+                elif top3_list:
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{top3_list[0]['entry']:.2f}", 'sl': f"{top3_list[0]['sl']:.2f}", 'tp': f"{top3_list[0]['tp']:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except: pass
 
@@ -440,12 +440,23 @@ if 'summary_data' in st.session_state:
     reasoning = clean_text(data['reasoning'])
     top3_list = data.get('top3_list', [])
 
+    # CHANGE LABEL: "SPECULATIVE BUY" or "SPECULATIVE SELL" for neutral
     if direction == "BUY":
-        dir_label = "BUY"; dir_color = "#00FF00"
+        # If it came from top3, it's speculative; if from direct, it's real.
+        if top3_list:
+            dir_label = "SPECULATIVE BUY"
+        else:
+            dir_label = "BUY"
+        dir_color = "#00FF00"
     elif direction == "SELL":
-        dir_label = "SELL"; dir_color = "#FF0000"
+        if top3_list:
+            dir_label = "SPECULATIVE SELL"
+        else:
+            dir_label = "SELL"
+        dir_color = "#FF0000"
     else:
-        dir_label = "SPECULATIVE"; dir_color = "#FFD700"
+        dir_label = "SPECULATIVE"
+        dir_color = "#FFD700"
     
     sl_color = "#FF0000"; tp_color = "#00FF00"
 
@@ -453,13 +464,8 @@ if 'summary_data' in st.session_state:
         setups_html = ""
         for i, setup in enumerate(top3_list, 1):
             desc = clean_text(setup['desc'])
-            # Highlight the smart selected setup
-            if setup['entry'] == entry:
-                highlight_style = "border: 2px solid #00ff00; background: rgba(0, 255, 0, 0.1);"
-            else:
-                highlight_style = "border: 1px solid #f1c40f;"
             setups_html += f"""
-            <div style="{highlight_style} border-radius: 8px; padding: 10px; margin-top: 10px;">
+            <div style="border: 1px solid #f1c40f; border-radius: 8px; padding: 10px; margin-top: 10px;">
                 <p style="color: #f9e79f; font-weight: bold; margin: 0;">Setup {i}: {desc}</p>
                 <p style="color: white; margin: 5px 0;">Entry: {setup['entry']:.2f}</p>
                 <p style="color: {sl_color}; margin: 5px 0;">Stop Loss: {setup['sl']:.2f}</p>
@@ -498,6 +504,7 @@ if 'summary_data' in st.session_state:
         """
     st.markdown(html, unsafe_allow_html=True)
     
+    # Clear the data so it doesn't show again on refresh
     del st.session_state.summary_data
 
 st.divider()
