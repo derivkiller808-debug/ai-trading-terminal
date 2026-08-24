@@ -259,8 +259,6 @@ if uploaded_files:
         - A brief trigger description (e.g., "Buy when price sweeps 77,300")
         - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
 
-        **IMPORTANT: The third setup (Setup #3) MUST always be a liquidity sweep entry** (e.g., "Buy when price sweeps the low and shows rejection" or "Sell when price sweeps the high and fails"). Ensure that Setup #3 is explicitly a liquidity sweep.
-
         **CRITICAL FORMAT INSTRUCTION (for the entire response):**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
         Symbol:
@@ -427,23 +425,12 @@ if 'summary_data' in st.session_state:
     reasoning = clean_text(data['reasoning'])
     top3_list = data.get('top3_list', [])
 
-    # Determine display label for direction
     if direction == "BUY":
         dir_label = "BUY"; dir_color = "#00FF00"
     elif direction == "SELL":
         dir_label = "SELL"; dir_color = "#FF0000"
     else:
-        # NEUTRAL: try to detect if first speculative setup is Buy or Sell
-        if top3_list and len(top3_list) > 0:
-            desc_lower = top3_list[0]['desc'].lower()
-            if "buy" in desc_lower:
-                dir_label = "SPECULATIVE BUY"; dir_color = "#FFD700"
-            elif "sell" in desc_lower:
-                dir_label = "SPECULATIVE SELL"; dir_color = "#FFD700"
-            else:
-                dir_label = "SPECULATIVE"; dir_color = "#FFD700"
-        else:
-            dir_label = "SPECULATIVE"; dir_color = "#FFD700"
+        dir_label = "SPECULATIVE"; dir_color = "#FFD700"
     
     sl_color = "#FF0000"; tp_color = "#00FF00"
 
