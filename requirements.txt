@@ -4,4 +4,3 @@ pillow
 supabase
 streamlit-cookies-controller
 pandas
-pytesseract
