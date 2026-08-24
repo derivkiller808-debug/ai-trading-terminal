@@ -111,9 +111,16 @@ def clean_analysis(text):
     text = text.replace("Speculative Setup:", "\n\n**🚨 SPECULATIVE SETUP:**")
     return text
 
-# --- PARSE VISUAL DATA (For Image Generation) ---
-def parse_visual_setups(text):
+# --- PARSE VISUAL DATA (Extracts Setups & Chart Scale) ---
+def parse_visual_data(text):
     setups = []
+    # Extract Chart Top and Bottom for scaling
+    top_match = re.search(r"Chart Top Price:\s*([\d.]+)", text, re.IGNORECASE)
+    bottom_match = re.search(r"Chart Bottom Price:\s*([\d.]+)", text, re.IGNORECASE)
+    
+    top_price = float(top_match.group(1)) if top_match else None
+    bottom_price = float(bottom_match.group(1)) if bottom_match else None
+    
     for i in range(1, 4):
         dir_match = re.search(rf"Setup {i} Direction:\s*([A-Z]+)", text, re.IGNORECASE)
         entry_match = re.search(rf"Setup {i} Entry:\s*([\d.]+)", text, re.IGNORECASE)
@@ -127,10 +134,11 @@ def parse_visual_setups(text):
                 'sl': float(sl_match.group(1)),
                 'tp': float(tp_match.group(1))
             })
-    return setups
+            
+    return setups, top_price, bottom_price
 
-# --- DRAW SETUP ON IMAGE ---
-def draw_setup_on_image(img, setup):
+# --- DRAW SETUP ON IMAGE (Using Chart Scale) ---
+def draw_setup_on_image(img, setup, top_price, bottom_price):
     img_copy = img.copy()
     draw = ImageDraw.Draw(img_copy)
     width, height = img_copy.size
@@ -139,16 +147,17 @@ def draw_setup_on_image(img, setup):
         font = ImageFont.truetype("arial.ttf", 20)
     except:
         font = ImageFont.load_default()
-        
-    # Calculate Price Range (Add a small buffer)
-    prices = [setup['entry'], setup['sl'], setup['tp']]
-    min_p = min(prices)
-    max_p = max(prices)
-    range_p = max_p - min_p if max_p != min_p else 1
+    
+    # If scale is missing, fallback to min/max of the setups
+    if not top_price or not bottom_price or top_price == bottom_price:
+        prices = [setup['entry'], setup['sl'], setup['tp']]
+        bottom_price = min(prices)
+        top_price = max(prices)
+        if bottom_price == top_price: bottom_price -= 1; top_price += 1
     
     # Map price to Y coordinate (Top=High, Bottom=Low)
     def y_map(price):
-        return height - 30 - ((price - min_p) / range_p) * (height - 60)
+        return height - 30 - ((price - bottom_price) / (top_price - bottom_price)) * (height - 60)
     
     entry_y = y_map(setup['entry'])
     sl_y = y_map(setup['sl'])
@@ -157,10 +166,8 @@ def draw_setup_on_image(img, setup):
     # Colors
     if setup['direction'] == 'BUY':
         color = (0, 200, 83)  # Green
-        arrow_dir = "UP"
     else:
         color = (255, 82, 82)  # Red
-        arrow_dir = "DOWN"
         
     # Draw lines
     draw.line([(width * 0.2, entry_y), (width * 0.8, entry_y)], fill=(200, 200, 200), width=2) # Entry Grey
@@ -173,7 +180,7 @@ def draw_setup_on_image(img, setup):
     draw.text((5, tp_y - 10), f"TP: {setup['tp']}", fill=(0, 200, 83), font=font)
     
     # Draw Arrow
-    if arrow_dir == "UP":
+    if setup['direction'] == 'BUY':
         draw.polygon([(width * 0.5, entry_y - 25), (width * 0.45, entry_y - 5), (width * 0.55, entry_y - 5)], fill=color)
     else:
         draw.polygon([(width * 0.5, entry_y + 25), (width * 0.45, entry_y + 5), (width * 0.55, entry_y + 5)], fill=color)
@@ -189,6 +196,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 if 'visual_setups' not in st.session_state: st.session_state.visual_setups = []
+if 'chart_scale' not in st.session_state: st.session_state.chart_scale = (None, None)
 
 # --- PARSING ---
 def parse_ai_response(text):
@@ -269,7 +277,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # UPDATED PROMPT: Includes VISUAL SETUP DATA for Image generation
+        # UPDATED PROMPT: Includes VISUAL SCALE data for the 5-min chart
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -301,9 +309,11 @@ if uploaded_files:
         - For each Top 3 setup, include: Title, Direction, Entry, Stop Loss, Take Profit, and Confluence Trigger.
 
         **CRITICAL FORMAT INSTRUCTION (PARSEABLE DATA):**
-        After the main text block, **MUST** output the following block exactly at the end so the system can draw visuals. Use the exact labels below:
+        After the main text block, **MUST** output the following block exactly at the end so the system can draw visuals. You MUST read the Y-Axis scale from the 5-minute chart and give me the top and bottom prices.
 
         VISUAL SETUP DATA
+        Chart Top Price: (The highest price level visible on the 5-min chart Y-axis)
+        Chart Bottom Price: (The lowest price level visible on the 5-min chart Y-axis)
         Setup 1 Direction: (BUY or SELL)
         Setup 1 Entry: (Value)
         Setup 1 Stop Loss: (Value)
@@ -368,12 +378,10 @@ if uploaded_files:
                     st.stop()
 
                 parsed_data = parse_ai_response(ai_text)
-                visual_setups = parse_visual_setups(ai_text) # Extract visual setups
+                visual_setups, top_price, bottom_price = parse_visual_data(ai_text) # Extract setups & scale
                 
-                if visual_setups:
-                    st.session_state.visual_setups = visual_setups
-                else:
-                    st.session_state.visual_setups = []
+                st.session_state.visual_setups = visual_setups if visual_setups else []
+                st.session_state.chart_scale = (top_price, bottom_price)
 
                 # New Fallback
                 if parsed_data is None:
@@ -454,19 +462,22 @@ if uploaded_files:
 
 st.divider()
 
-# --- VISUALIZATION BUTTON ABOVE CALCULATOR ---
+# --- VISUALIZATION BUTTON (Uses 5-min chart and keeps analysis intact) ---
 if st.session_state.visual_setups and len(uploaded_files or []) == 3:
-    st.markdown("### 🎯 Visualize Setups")
+    st.markdown("### 🎯 Visualize Setups (Using 5-Min Chart Scale)")
     if st.button("📈 Generate Visuals for Top 3 Setups"):
-        # Use the last uploaded image as the base
+        # Use the last uploaded image (presumed to be the 5-min chart)
         base_image = Image.open(uploaded_files[-1])
         
-        # Create 3 images
-        img1 = draw_setup_on_image(base_image, st.session_state.visual_setups[0])
-        img2 = draw_setup_on_image(base_image, st.session_state.visual_setups[1])
-        img3 = draw_setup_on_image(base_image, st.session_state.visual_setups[2])
+        # Get the scale from the AI
+        top_price, bottom_price = st.session_state.chart_scale
         
-        # Display them
+        # Create 3 images based on the chart scale
+        img1 = draw_setup_on_image(base_image, st.session_state.visual_setups[0], top_price, bottom_price)
+        img2 = draw_setup_on_image(base_image, st.session_state.visual_setups[1], top_price, bottom_price)
+        img3 = draw_setup_on_image(base_image, st.session_state.visual_setups[2], top_price, bottom_price)
+        
+        # Display them (The analysis block above remains untouched)
         c1, c2, c3 = st.columns(3)
         with c1:
             st.image(img1, caption=f"Setup 1 ({st.session_state.visual_setups[0]['direction']})")
