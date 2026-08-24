@@ -37,27 +37,6 @@ st.markdown(f"""
     .info-text {{ color: #d8b4fe !important; line-height: 1.5; font-size: 14px; }}
     footer {{visibility: hidden;}}
     [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
-
-    /* NEW: ORDERLY CARD STYLING */
-    .setup-card {{
-        border: 1px solid #f1c40f;
-        background: rgba(78, 52, 46, 0.6);
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 15px;
-        box-shadow: 0 0 15px rgba(241, 196, 15, 0.2);
-    }}
-    .setup-title {{
-        font-size: 18px;
-        font-weight: bold;
-        color: #f9e79f !important;
-        margin-bottom: 10px;
-    }}
-    .setup-detail {{
-        font-size: 15px;
-        color: #d8b4fe !important;
-        line-height: 1.6;
-    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,7 +120,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- PARSING ---
+# --- UPDATED PARSING (Handles N/A and flexible formatting) ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -156,91 +135,12 @@ def parse_ai_response(text):
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
         
+        # Handle N/A
         if "N/A" in [entry_match.group(1), sl_match.group(1), tp_match.group(1)]:
             return {'symbol': sym, 'direction': direction, 'entry': None, 'sl': None, 'tp': None}
             
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
     return None
-
-# --- NEW: ORDERLY TOP 3 PARSER AND RENDERER ---
-def render_top3_setups(raw_text):
-    # Find the TOP 3 section
-    if "🔥 TOP 3 SPECULATIVE SETUPS" in raw_text:
-        # Split out the top 3 section
-        parts = raw_text.split("🔥 TOP 3 SPECULATIVE SETUPS", 1)
-        top3_text = parts[1]
-        full_list = parts[0]
-        
-        # Find the 3 setups (looks for #1, #2, #3 at start of lines)
-        setup_blocks = re.split(r'(?m)^\s*[#\-]?\s*(1|2|3)\s*[\.\):]', top3_text)
-        
-        # Fallback if regex fails
-        if len(setup_blocks) < 2:
-            # Just display the block as plain text
-            st.markdown(f"""
-            <div class='spec-box'>
-                <div class='spec-header'>🏆 TOP 3 SPECULATIVE SETUPS (RANKED)</div>
-                <div class='spec-text'>{top3_text.strip()}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            return
-        
-        # If setup_blocks is [pre_text, 1, content1, 2, content2, 3, content3]
-        setups = []
-        for i in range(1, len(setup_blocks), 2):
-            if i+1 < len(setup_blocks):
-                setups.append({
-                    'num': setup_blocks[i],
-                    'content': setup_blocks[i+1].strip()
-                })
-            else:
-                setups.append({
-                    'num': setup_blocks[i],
-                    'content': ""
-                })
-        
-        # Extract details
-        for i, s in enumerate(setups):
-            entry = re.search(r"Entry\s*[::=]\s*([\d.]+)", s['content'], re.IGNORECASE)
-            sl = re.search(r"Stop\s*Loss\s*[::=]\s*([\d.]+)", s['content'], re.IGNORECASE)
-            tp = re.search(r"Take\s*Profit\s*[::=]\s*([\d.]+)", s['content'], re.IGNORECASE)
-            
-            s['entry'] = entry.group(1) if entry else "N/A"
-            s['sl'] = sl.group(1) if sl else "N/A"
-            s['tp'] = tp.group(1) if tp else "N/A"
-            
-            # Remove raw text lines for cleaner display
-            s['clean'] = re.sub(r"(?i)(Entry|Stop Loss|Take Profit)\s*[::=].*", "", s['content']).strip()
-        
-        # Render orderly cards
-        st.markdown(f"<div class='spec-box'><div class='spec-header'>🏆 TOP 3 SPECULATIVE SETUPS (RANKED)</div>", unsafe_allow_html=True)
-        for s in setups:
-            st.markdown(f"""
-            <div class='setup-card'>
-                <div class='setup-title'>Setup #{s['num']}</div>
-                <div class='setup-detail'>{s['clean']}</div>
-                <div class='setup-detail' style='margin-top: 5px;'>
-                    <strong>Entry:</strong> {s['entry']} |
-                    <strong>Stop:</strong> {s['sl']} |
-                    <strong>Target:</strong> {s['tp']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Display the full 10 setups below
-        st.markdown(f"""
-        <div class='info-box'>
-            <div class='info-text'><strong>Full List of 10 Setups for Reference:</strong><br>{full_list.strip()}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    else:
-        st.markdown(f"""
-        <div class='info-box'>
-            <div class='info-text'><strong>Full List of Setups:</strong><br>{raw_text.strip()}</div>
-        </div>
-        """, unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -300,6 +200,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
+        # UPDATED PROMPT: Uses N/A for NEUTRAL so it never fails the parser
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -327,16 +228,8 @@ if uploaded_files:
         You MUST provide a **🚨 SPECULATIVE SETUP:** section immediately after the verdict.
         - First, brainstorm **EXACTLY TEN (10) individual speculative setups** that could support an entry. Use "Buy when..." or "Sell when..." for each. Number them 1 to 10. They do NOT have to happen all at the same time.
         - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
-        - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS (RANKED):**
-
-        **STRICT FORMAT FOR THE TOP 3 SECTION:**
-        - Rank them from #1 (most likely to play out) to #3 (least likely among the top 3).
-        - For each setup (#1, #2, #3), you MUST include:
-          - **Title:** (Short description of the setup)
-          - **Entry:**
-          - **Stop Loss:**
-          - **Take Profit:**
-          - **Confluence Trigger:** (The exact conditions needed, e.g., "Buy when price sweeps 77,300 and wicks")
+        - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS:**
+        - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
         **CRITICAL FORMAT INSTRUCTION:**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
@@ -376,6 +269,7 @@ if uploaded_files:
                     """, unsafe_allow_html=True)
                     st.stop()
 
+                # CHECK VALIDATION
                 if re.search(r"Validation:\s*FAIL", ai_text, re.IGNORECASE):
                     error_match = re.search(r"Validation Error\(s\):(.*)", ai_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
@@ -390,6 +284,7 @@ if uploaded_files:
 
                 parsed_data = parse_ai_response(ai_text)
 
+                # NEW FALLBACK LOGIC: If parser fails, still show the text!
                 if parsed_data is None:
                     full_text = clean_analysis(ai_text)
                     st.warning("The AI didn't format the numbers perfectly. Showing the full analysis below. You can manually add the numbers to the calculator if you wish.")
@@ -397,7 +292,9 @@ if uploaded_files:
                         st.markdown(full_text)
                     st.stop()
 
+                # CHECK DIRECTION
                 if parsed_data['direction'] == "NEUTRAL":
+                    # Show Speculative Setup
                     full_text = clean_analysis(ai_text)
                     split_marker = "🚨 SPECULATIVE SETUP:"
                     if split_marker in full_text:
@@ -405,10 +302,16 @@ if uploaded_files:
                     else:
                         main_analysis, spec_part = full_text, "No speculative setup provided."
 
+                    top3_text = spec_part
+                    full_list_text = spec_part
+                    if "🔥 TOP 3 SPECULATIVE SETUPS:" in spec_part:
+                        full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
+                        top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
+
                     st.markdown(f"""
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 ranked speculative setups with their entry, stop, and target levels.</div>
+                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 speculative setups from the 10 listed below.</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -418,12 +321,23 @@ if uploaded_files:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # Call the new orderly renderer!
-                    render_top3_setups(spec_part)
+                    st.markdown(f"""
+                    <div class='spec-box'>
+                        <div class='spec-header'>🏆 TOP 3 HIGHEST PROBABILITY SETUPS</div>
+                        <div class='spec-text'>{top3_text.strip()}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.markdown(f"""
+                    <div class='info-box'>
+                        <div class='info-text'><strong>Full List of 10 Setups for Reference:</strong><br>{full_list_text.strip()}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                     
                     st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
                 
                 else:
+                    # BUY or SELL - Auto fill
                     sym = parsed_data['symbol']
                     st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
                     st.session_state.auto_symbol = sym
