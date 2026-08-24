@@ -120,7 +120,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- UPDATED PARSING (Always seeks numbers, falls back to Top 3 first price) ---
+# --- PARSING (Main verdict) ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -135,15 +135,26 @@ def parse_ai_response(text):
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
         
-        # Handle N/A by falling back to the Top 3 first prices
         if "N/A" in [entry_match.group(1), sl_match.group(1), tp_match.group(1)]:
-            # Fallback: Find first numbers in Top 3 section (e.g., "Buy when ... 77,300 ... SL 77,000 ... TP 78,200")
-            numbers = re.findall(r"\d+\.?\d*", text)
-            if len(numbers) >= 3:
-                return {'symbol': sym, 'direction': direction, 'entry': float(numbers[0]), 'sl': float(numbers[1]), 'tp': float(numbers[2])}
             return {'symbol': sym, 'direction': direction, 'entry': None, 'sl': None, 'tp': None}
             
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
+    return None
+
+# --- PARSING #1 setup from "Top 3" text ---
+def parse_top3_first(text):
+    # Look for the first setup in the top 3 section
+    # We'll search for lines like "Entry: 12345.67" or "Buy when ... Entry: ..."
+    top3_block = re.search(r"TOP 3 SPECULATIVE SETUPS.*", text, re.IGNORECASE | re.DOTALL)
+    if not top3_block:
+        return None
+    block = top3_block.group(0)
+    # Find the first numeric triple in that block
+    entries = re.findall(r"(?:Entry|Buy when|Sell when)\s*[:=]?\s*([\d.]+)", block)
+    sl = re.findall(r"Stop\s*Loss\s*[:=]?\s*([\d.]+)", block)
+    tp = re.findall(r"Take\s*Profit\s*[:=]?\s*([\d.]+)", block)
+    if entries and sl and tp:
+        return float(entries[0]), float(sl[0]), float(tp[0])
     return None
 
 # --- SIDEBAR ---
@@ -170,7 +181,7 @@ with st.sidebar:
 
 st.divider()
 
-# --- AI ANALYSIS (SINGLE AI - ULTRA FAST) ---
+# --- AI ANALYSIS ---
 if uploaded_files:
     st.subheader("🤖 Multi-Timeframe Analysis")
     if st.button("Run Top-Trader Analysis"):
@@ -204,7 +215,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # UPDATED PROMPT: Force Entry/SL/TP even for NEUTRAL
+        # UPDATED PROMPT: Top 3 setups now include Entry/SL/TP numbers!
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -233,24 +244,33 @@ if uploaded_files:
         - First, brainstorm **EXACTLY TEN (10) individual speculative setups** that could support an entry. Use "Buy when..." or "Sell when..." for each. Number them 1 to 10. They do NOT have to happen all at the same time.
         - Then, evaluate those 10 setups based on **highest probability** and **best risk-to-reward ratio**.
         - Finally, write the **BEST THREE** setups in a new section starting with: **🔥 TOP 3 SPECULATIVE SETUPS:**
-        - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
+        
+        **For EACH of the TOP 3 setups, you MUST provide:**
+        - A brief trigger description (e.g., "Buy when price sweeps 77,300")
+        - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
+        
+        Example:
+        1. Buy when price sweeps 77,300. Entry: 77,350. Stop Loss: 77,000. Take Profit: 78,200.
+        2. Sell when price rejects 78,000. Entry: 77,900. Stop Loss: 78,300. Take Profit: 76,800.
+        3. Buy when price holds 76,500. Entry: 76,600. Stop Loss: 76,200. Take Profit: 77,800.
+        
+        **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
-        **CRITICAL FORMAT INSTRUCTION:**
-        Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, you MUST write the ENTRY, STOP LOSS, and TAKE PROFIT for your #1 BEST SPECULATIVE SETUP (do not write N/A).
+        **CRITICAL FORMAT INSTRUCTION (for the entire response):**
+        Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
         Symbol:
         Direction: (BUY, SELL, or NEUTRAL)
-        Entry: (Always a concrete number)
-        Stop Loss: (Always a concrete number)
-        Take Profit: (Always a concrete number)
+        Entry: (Value or N/A)
+        Stop Loss: (Value or N/A)
+        Take Profit: (Value or N/A)
 
         DO NOT calculate lot sizes, leverage, or margin.
         """
 
-        success = False
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                # Show the "Loading..." box immediately
+                # Show Loading box immediately
                 st.markdown(f"""
                 <div class='spec-box'>
                     <div class='spec-header'>📊 AI Analysis Summary</div>
@@ -281,7 +301,7 @@ if uploaded_files:
                     """, unsafe_allow_html=True)
                     st.stop()
 
-                # CHECK VALIDATION
+                # Check validation
                 if re.search(r"Validation:\s*FAIL", ai_text, re.IGNORECASE):
                     error_match = re.search(r"Validation Error\(s\):(.*)", ai_text, re.IGNORECASE)
                     errors = error_match.group(1).strip() if error_match else "The uploaded charts do not meet the requirements."
@@ -296,17 +316,59 @@ if uploaded_files:
 
                 parsed_data = parse_ai_response(ai_text)
 
-                # NEW FALLBACK LOGIC: If parser fails, still show the text!
-                if parsed_data is None:
-                    full_text = clean_analysis(ai_text)
-                    st.warning("The AI didn't format the numbers perfectly. Showing the full analysis below. You can manually add the numbers to the calculator if you wish.")
-                    with st.container(border=True):
-                        st.markdown(full_text)
-                    st.stop()
+                # If AI gave explicit BUY/SELL, use it
+                if parsed_data and parsed_data['direction'] != "NEUTRAL":
+                    sym = parsed_data['symbol']
+                    st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
+                    st.session_state.auto_symbol = sym
+                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
+                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
+                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                # CHECK DIRECTION
-                if parsed_data['direction'] == "NEUTRAL":
-                    # Show Speculative Setup
+                    if supabase_connected:
+                        try:
+                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
+                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                        except: pass
+
+                    st.success("✅ Analysis Complete! (Fast Mode)")
+                    st.rerun()
+
+                # If NEUTRAL or missing numbers, use the #1 Top 3 setup
+                else:
+                    # Try to extract the first setup from TOP 3
+                    top3_nums = parse_top3_first(ai_text)
+                    if top3_nums:
+                        entry, sl, tp = top3_nums
+                        # Determine symbol from the parsed data if available, else default to BTCUSD
+                        if parsed_data and parsed_data['symbol']:
+                            sym = parsed_data['symbol']
+                        else:
+                            sym = "BTCUSD (Bitcoin)"
+                        # Set the summary as the #1 speculative setup
+                        st.session_state.analysis_result = f"**AI Speculative Entry (#1 Setup)**\n\nSymbol: {sym}\nEntry: {entry:.2f}\nStop Loss: {sl:.2f}\nTake Profit: {tp:.2f}"
+                        st.session_state.auto_symbol = sym
+                        st.session_state.entry_field = f"{entry:.2f}"
+                        st.session_state.sl_field = f"{sl:.2f}"
+                        st.session_state.tp_field = f"{tp:.2f}"
+
+                        if supabase_connected:
+                            try:
+                                cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{entry:.2f}", 'sl': f"{sl:.2f}", 'tp': f"{tp:.2f}"}
+                                supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
+                            except: pass
+                    else:
+                        # If we couldn't get numbers, just show a simple message
+                        sym = "BTCUSD (Bitcoin)"
+                        if parsed_data and parsed_data['symbol']:
+                            sym = parsed_data['symbol']
+                        st.session_state.analysis_result = f"**AI Analysis (NEUTRAL)**\n\nSymbol: {sym}\nEntry: N/A\nStop Loss: N/A\nTake Profit: N/A"
+                        st.session_state.auto_symbol = sym
+                        st.session_state.entry_field = ""
+                        st.session_state.sl_field = ""
+                        st.session_state.tp_field = ""
+
+                    # Now display the full speculative setup
                     full_text = clean_analysis(ai_text)
                     split_marker = "🚨 SPECULATIVE SETUP:"
                     if split_marker in full_text:
@@ -320,26 +382,14 @@ if uploaded_files:
                         full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
 
-                    # Get the symbol and the speculative entry numbers
-                    sym_for_msg = parsed_data['symbol']
-                    ticker = sym_for_msg.split()[0] if sym_for_msg else "Unknown"
-                    spec_entry = parsed_data['entry']
-                    spec_sl = parsed_data['sl']
-                    spec_tp = parsed_data['tp']
-
-                    # ALWAYS POPULATE THE AI ANALYSIS SUMMARY with the speculative numbers
-                    st.session_state.analysis_result = f"**AI Analysis (NEUTRAL - Speculative)**\n\nSymbol: {sym_for_msg}\nEntry: {spec_entry:.2f}\nStop Loss: {spec_sl:.2f}\nTake Profit: {spec_tp:.2f}"
-                    st.session_state.auto_symbol = sym_for_msg
-                    st.session_state.entry_field = f"{spec_entry:.2f}"
-                    st.session_state.sl_field = f"{spec_sl:.2f}"
-                    st.session_state.tp_field = f"{spec_tp:.2f}"
+                    ticker = sym.split()[0] if sym else "Unknown"
 
                     st.markdown(f"""
                     <div class='gold-warning-box'>
                         <div class='gold-warning-text'>Scanned '{ticker}' Successfully. AI speculations and high probability entries are below</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
+
                     st.markdown(f"""
                     <div class='analysis-box'>
                         <div class='analysis-text'>{main_analysis.strip()}</div>
@@ -358,32 +408,23 @@ if uploaded_files:
                         <div class='info-text'><strong>Full List of 10 Setups for Reference:</strong><br>{full_list_text.strip()}</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
+
                     st.info("These are NOT active trades. Only enter if the market reaches the exact conditions described in the Top 3. You can manually type the levels into the calculator below once the trigger is confirmed.")
-                
-                else:
-                    # BUY or SELL - Auto fill
-                    sym = parsed_data['symbol']
-                    st.session_state.analysis_result = f"**AI Analysis ({parsed_data['direction']})**\n\nSymbol: {sym}\nEntry: {parsed_data['entry']:.2f}\nStop Loss: {parsed_data['sl']:.2f}\nTake Profit: {parsed_data['tp']:.2f}"
-                    st.session_state.auto_symbol = sym
-                    st.session_state.entry_field = f"{parsed_data['entry']:.2f}"
-                    st.session_state.sl_field = f"{parsed_data['sl']:.2f}"
-                    st.session_state.tp_field = f"{parsed_data['tp']:.2f}"
 
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except: pass
-
-                    st.success("✅ Analysis Complete! (Fast Mode)")
-                    st.rerun()
+                    # Force the summary box to appear AFTER all this, before the calculator
+                    if 'analysis_result' in st.session_state:
+                        st.markdown(f"""
+                        <div class='spec-box'>
+                            <div class='spec-header'>📊 AI Analysis Summary (Speculative)</div>
+                            <div class='spec-text'>{st.session_state['analysis_result']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
-    # Display the active trade summary in a golden-brown box
-    if 'analysis_result' in st.session_state:
+    # For the case when analysis_result already exists (from a previous run, e.g., BUY/SELL)
+    if 'analysis_result' in st.session_state and not st.session_state.get('show_spec_summary', False):
         st.markdown(f"""
         <div class='spec-box'>
             <div class='spec-header'>📊 AI Analysis Summary</div>
