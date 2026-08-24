@@ -120,7 +120,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- UPDATED PARSING (Handles N/A and flexible formatting) ---
+# --- UPDATED PARSING (Always seeks numbers, falls back to Top 3 first price) ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -135,8 +135,12 @@ def parse_ai_response(text):
         else: sym = "BTCUSD (Bitcoin)"
         direction = direction_match.group(1).upper() if direction_match else "NEUTRAL"
         
-        # Handle N/A
+        # Handle N/A by falling back to the Top 3 first prices
         if "N/A" in [entry_match.group(1), sl_match.group(1), tp_match.group(1)]:
+            # Fallback: Find first numbers in Top 3 section (e.g., "Buy when ... 77,300 ... SL 77,000 ... TP 78,200")
+            numbers = re.findall(r"\d+\.?\d*", text)
+            if len(numbers) >= 3:
+                return {'symbol': sym, 'direction': direction, 'entry': float(numbers[0]), 'sl': float(numbers[1]), 'tp': float(numbers[2])}
             return {'symbol': sym, 'direction': direction, 'entry': None, 'sl': None, 'tp': None}
             
         return {'symbol': sym, 'direction': direction, 'entry': float(entry_match.group(1)), 'sl': float(sl_match.group(1)), 'tp': float(tp_match.group(1))}
@@ -200,6 +204,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
+        # UPDATED PROMPT: Force Entry/SL/TP even for NEUTRAL
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -231,12 +236,12 @@ if uploaded_files:
         - **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
         **CRITICAL FORMAT INSTRUCTION:**
-        Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
+        Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, you MUST write the ENTRY, STOP LOSS, and TAKE PROFIT for your #1 BEST SPECULATIVE SETUP (do not write N/A).
         Symbol:
         Direction: (BUY, SELL, or NEUTRAL)
-        Entry: (Value or N/A)
-        Stop Loss: (Value or N/A)
-        Take Profit: (Value or N/A)
+        Entry: (Always a concrete number)
+        Stop Loss: (Always a concrete number)
+        Take Profit: (Always a concrete number)
 
         DO NOT calculate lot sizes, leverage, or margin.
         """
@@ -245,7 +250,7 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
-                # Show the "Loading..." box immediately while AI thinks!
+                # Show the "Loading..." box immediately
                 st.markdown(f"""
                 <div class='spec-box'>
                     <div class='spec-header'>📊 AI Analysis Summary</div>
@@ -315,9 +320,19 @@ if uploaded_files:
                         full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
 
-                    # Get the symbol for the message
+                    # Get the symbol and the speculative entry numbers
                     sym_for_msg = parsed_data['symbol']
                     ticker = sym_for_msg.split()[0] if sym_for_msg else "Unknown"
+                    spec_entry = parsed_data['entry']
+                    spec_sl = parsed_data['sl']
+                    spec_tp = parsed_data['tp']
+
+                    # ALWAYS POPULATE THE AI ANALYSIS SUMMARY with the speculative numbers
+                    st.session_state.analysis_result = f"**AI Analysis (NEUTRAL - Speculative)**\n\nSymbol: {sym_for_msg}\nEntry: {spec_entry:.2f}\nStop Loss: {spec_sl:.2f}\nTake Profit: {spec_tp:.2f}"
+                    st.session_state.auto_symbol = sym_for_msg
+                    st.session_state.entry_field = f"{spec_entry:.2f}"
+                    st.session_state.sl_field = f"{spec_sl:.2f}"
+                    st.session_state.tp_field = f"{spec_tp:.2f}"
 
                     st.markdown(f"""
                     <div class='gold-warning-box'>
