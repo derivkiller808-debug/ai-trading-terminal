@@ -200,7 +200,6 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # UPDATED PROMPT: Uses N/A for NEUTRAL so it never fails the parser
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -308,10 +307,14 @@ if uploaded_files:
                         full_list_text, top3_text = spec_part.split("🔥 TOP 3 SPECULATIVE SETUPS:", 1)
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
 
+                    # Get the symbol for the message
+                    sym_for_msg = parsed_data['symbol']  # e.g., "BTCUSD (Bitcoin)" or we can use the raw symbol
+                    # Extract just the ticker for a cleaner message
+                    ticker = sym_for_msg.split()[0] if sym_for_msg else "Unknown"
+
                     st.markdown(f"""
                     <div class='gold-warning-box'>
-                        <div class='gold-warning-text'>🛑 NO ACTIVE TRADE - Speculative Setup Only</div>
-                        <div class='gold-warning-text'>The AI did not see a clear setup right now. Here are the best 3 speculative setups from the 10 listed below.</div>
+                        <div class='gold-warning-text'>Scanned '{ticker}' Successfully. AI speculations and high probability entries are below</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -350,17 +353,22 @@ if uploaded_files:
                             cache_data = {'text': st.session_state.analysis_result, 'symbol': sym, 'entry': f"{parsed_data['entry']:.2f}", 'sl': f"{parsed_data['sl']:.2f}", 'tp': f"{parsed_data['tp']:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except: pass
-                    
+
                     st.success("✅ Analysis Complete! (Fast Mode)")
                     st.rerun()
 
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
+    # Display the active trade summary in a golden-brown box
     if 'analysis_result' in st.session_state:
-        st.success("AI Analysis Summary:")
-        with st.container(border=True):
-            st.markdown(st.session_state['analysis_result'])
+        # Do not use st.success - instead show in golden brown box
+        st.markdown(f"""
+        <div class='spec-box'>
+            <div class='spec-header'>📊 AI Analysis Summary</div>
+            <div class='spec-text'>{st.session_state['analysis_result']}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 st.divider()
 
