@@ -245,6 +245,14 @@ if uploaded_files:
         try:
             images = [Image.open(file) for file in uploaded_files]
             with st.spinner("Analyzing..."):
+                # Show the "Loading..." box immediately while AI thinks!
+                st.markdown(f"""
+                <div class='spec-box'>
+                    <div class='spec-header'>📊 AI Analysis Summary</div>
+                    <div class='spec-text'>Loading... Please wait a few seconds while the AI scans the charts.</div>
+                </div>
+                """, unsafe_allow_html=True)
+
                 random.shuffle(KEYS_LIST)
                 ai_text = None
 
@@ -308,8 +316,7 @@ if uploaded_files:
                         top3_text = "🔥 TOP 3 SPECULATIVE SETUPS:" + top3_text
 
                     # Get the symbol for the message
-                    sym_for_msg = parsed_data['symbol']  # e.g., "BTCUSD (Bitcoin)" or we can use the raw symbol
-                    # Extract just the ticker for a cleaner message
+                    sym_for_msg = parsed_data['symbol']
                     ticker = sym_for_msg.split()[0] if sym_for_msg else "Unknown"
 
                     st.markdown(f"""
@@ -362,7 +369,6 @@ if uploaded_files:
 
     # Display the active trade summary in a golden-brown box
     if 'analysis_result' in st.session_state:
-        # Do not use st.success - instead show in golden brown box
         st.markdown(f"""
         <div class='spec-box'>
             <div class='spec-header'>📊 AI Analysis Summary</div>
