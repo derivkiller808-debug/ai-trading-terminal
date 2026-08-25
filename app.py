@@ -11,39 +11,33 @@ from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 
-# --- STYLING (Only simple, safe background things) ---
+# --- HEADER & CLEAN CSS (Only Inline Styles Used) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
-    .stApp {{
-        background-image: url("{bg_url}");
-        background-size: cover;
-        background-color: #0e1117 !important;
-    }}
-    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; }}
+    .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
+    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
     h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
     p, li, span, label, div {{ color: #c084fc !important; }}
+    .stButton>button {{ background-color: rgba(0, 200, 83, 0.5) !important; color: #000 !important; font-weight: bold; border: 1px solid rgba(0, 200, 83, 0.8) !important; border-radius: 5px; }}
     footer {{visibility: hidden;}}
+    [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER ---
-st.markdown("<h1 style='color: #00E5A0; font-family: \"Courier New\", monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'>Upload 3 Charts. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: #00E5A0; font-family: 'Courier New', monospace; text-align: left;'>🧠 The Brilliant Trader's AI Terminal</h1>", unsafe_allow_html=True)
+st.markdown("<p style='color: #c084fc; font-family: 'Courier New', monospace;'>Upload 3 Charts. Full AI Analysis, Auto-Calculated Risk.</p>", unsafe_allow_html=True)
 
 # --- SETUP ---
 try:
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",") if k.strip()]
     if len(KEYS_LIST) == 0: st.error("❌ No keys found! Please check Settings -> Secrets."); st.stop()
-except Exception as e:
-    st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}")
-    st.stop()
+except Exception as e: st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}"); st.stop()
 
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
-except:
-    supabase_connected = False
+except: supabase_connected = False
 
 # --- COOKIE DEVICE TRACKING ---
 cookies = CookieController()
@@ -92,11 +86,14 @@ def safe_float(s):
     try: return float(s)
     except: return None
 
-# --- TEXT CLEANER (removes backticks & HTML breakers) ---
+# --- BULLETPROOF TEXT CLEANER (Removes backticks, HTML chars, and markdown) ---
 def clean_text(text):
     if not text: return ""
-    text = text.replace('`', '')
+    text = text.replace('```', '').replace('`', '')
+    text = text.replace('**', '').replace('__', '')
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    # Remove any other potential markdown breaking chars
+    text = text.replace('{', '').replace('}', '')
     return text
 
 def clean_analysis(text):
@@ -112,7 +109,7 @@ def clean_analysis(text):
     text = text.replace("5M Sniper Entry:", "\n\n**5M Sniper Entry:**")
     text = text.replace("Final Verdict:", "\n\n**Final Verdict:**")
     text = text.replace("Speculative Setup:", "\n\n**🚨 SPECULATIVE SETUP:**")
-    return text
+    return clean_text(text)  # Apply the bulletproof cleaner at the end
 
 # --- SYMBOLS & SESSION ---
 placeholder = "Select Instrument..."
@@ -123,7 +120,7 @@ if 'tp_field' not in st.session_state: st.session_state.tp_field = ""
 if 'auto_symbol' not in st.session_state: st.session_state.auto_symbol = placeholder
 if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- PARSING ---
+# --- PARSING (No complex Top3 reordering to avoid bugs) ---
 def parse_ai_response(text):
     symbol_match = re.search(r"Symbol\s*[::=]\s*([A-Z]+)", text, re.IGNORECASE)
     direction_match = re.search(r"Direction\s*[::=]\s*(BUY|SELL|NEUTRAL)", text, re.IGNORECASE)
@@ -144,36 +141,6 @@ def parse_ai_response(text):
             return {'symbol': sym, 'direction': direction, 'entry': None, 'sl': None, 'tp': None}
         return {'symbol': sym, 'direction': direction, 'entry': entry, 'sl': sl, 'tp': tp}
     return None
-
-def parse_top3_all(text):
-    top3_block = re.search(r"TOP 3 SPECULATIVE SETUPS.*", text, re.IGNORECASE | re.DOTALL)
-    if not top3_block:
-        return []
-    block = top3_block.group(0)
-    items = re.split(r'\n(?=\d\.)', block)
-    setups = []
-    for item in items:
-        if not re.search(r'Entry\s*[:=]?\s*[\d,]+', item):
-            continue
-        entry_match = re.search(r"Entry\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
-        sl_match = re.search(r"Stop\s*Loss\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
-        tp_match = re.search(r"Take\s*Profit\s*[:=]?\s*([\d,]+(?:\.\d+)?)", item, re.IGNORECASE)
-        if entry_match and sl_match and tp_match:
-            e = safe_float(entry_match.group(1))
-            s = safe_float(sl_match.group(1))
-            t = safe_float(tp_match.group(1))
-            if e and s and t:
-                desc = item.strip()
-                label = "Reversal"
-                if re.search(r'\[Momentum Continuation\]', desc, re.IGNORECASE):
-                    label = "Momentum Continuation"
-                elif re.search(r'\[Reversal\]', desc, re.IGNORECASE):
-                    label = "Reversal"
-                setups.append({'desc': clean_text(desc), 'label': label, 'entry': e, 'sl': s, 'tp': t})
-    momentum = [s for s in setups if s['label'] == "Momentum Continuation"]
-    others = [s for s in setups if s['label'] != "Momentum Continuation"]
-    reordered = momentum + others
-    return reordered[:3]
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -205,7 +172,7 @@ if uploaded_files:
     if st.button("Run Top-Trader Analysis"):
 
         if len(uploaded_files) != 3:
-            st.markdown(f"""
+            st.markdown("""
             <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center;">
                 <p style="color: #f9e79f; font-weight: bold; font-size: 16px; margin: 0;">⚠️ ERROR: Invalid Image Count</p>
                 <p style="color: #f9e79f; font-size: 16px; margin: 5px 0;">You must fill exactly 3 upload spaces (Chart 1, Chart 2, and Chart 3) to proceed.</p>
@@ -233,6 +200,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
+        # PROMPT: Simpler, no reordering logic in code (the AI will naturally prioritize momentum if told to)
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -266,7 +234,12 @@ if uploaded_files:
         - A brief trigger description (e.g., "Buy when price sweeps 77,300")
         - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
         - **CRITICAL:** At the very beginning of the description, include a label in brackets: **[Momentum Continuation]** if the setup is likely to continue the existing trend (e.g., breakout continuation), or **[Reversal]** if it's a potential reversal from the trend. 
-        Example: "[Momentum Continuation] Buy when price breaks above 78,200."
+        
+        **If any of the top 3 setups is a [Momentum Continuation], ALWAYS place it FIRST in the list (before any [Reversal] setups).**
+        
+        Example:
+        1. [Momentum Continuation] Buy when price breaks above 78,200. Entry: 78,250. Stop Loss: 77,900. Take Profit: 79,500.
+        2. [Reversal] Sell when price rejects 77,000. Entry: 76,900. Stop Loss: 77,300. Take Profit: 75,800.
         
         **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
@@ -306,7 +279,7 @@ if uploaded_files:
                         continue
 
                 if ai_text is None:
-                    st.markdown(f"""
+                    st.markdown("""
                     <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4); text-align: center;">
                         <p style="color: #f9e79f; font-weight: bold; font-size: 16px; margin: 0;">🛑 AI CONNECTION ERROR</p>
                         <p style="color: #f9e79f; font-size: 16px; margin: 5px 0;">All keys are exhausted right now. Please wait 30 seconds and try again.</p>
@@ -332,7 +305,6 @@ if uploaded_files:
                 symbol = "BTCUSD (Bitcoin)"
                 entry = sl = tp = None
                 reasoning = ""
-                top3_list = []
 
                 if parsed_data and parsed_data['direction'] != "NEUTRAL":
                     direction = parsed_data['direction']
@@ -342,40 +314,46 @@ if uploaded_files:
                     tp = parsed_data['tp']
                     reasoning = ai_text.split("Symbol:")[0] if "Symbol:" in ai_text else ai_text
                 else:
-                    top3_list = parse_top3_all(ai_text)
+                    # For NEUTRAL, we just use the whole cleaned text (no complex parsing for the moment)
                     if parsed_data and parsed_data['symbol']:
                         symbol = parsed_data['symbol']
                     reasoning = ai_text
 
+                # Store for summary box
                 st.session_state.summary_data = {
                     'direction': direction,
                     'symbol': symbol,
                     'entry': entry,
                     'sl': sl,
                     'tp': tp,
-                    'reasoning': reasoning,
-                    'top3_list': top3_list
+                    'reasoning': reasoning
                 }
 
-                if direction == "NEUTRAL" and top3_list:
-                    st.session_state.auto_symbol = symbol
-                    st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
-                    st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
-                    st.session_state.tp_field = f"{top3_list[0]['tp']:.2f}"
+                # Auto-fill calculator if we have an entry (either direct or if AI gave one in top 3)
+                if direction == "NEUTRAL":
+                    # Try to extract first entry from the whole text
+                    first_entry = re.search(r"Entry\s*[::=]?\s*([\d,]+(?:\.\d+)?)", ai_text)
+                    first_sl = re.search(r"Stop\s*Loss\s*[::=]?\s*([\d,]+(?:\.\d+)?)", ai_text)
+                    first_tp = re.search(r"Take\s*Profit\s*[::=]?\s*([\d,]+(?:\.\d+)?)", ai_text)
+                    if first_entry and first_sl and first_tp:
+                        entry = safe_float(first_entry.group(1))
+                        sl = safe_float(first_sl.group(1))
+                        tp = safe_float(first_tp.group(1))
+                        if entry and sl and tp:
+                            st.session_state.auto_symbol = symbol
+                            st.session_state.entry_field = f"{entry:.2f}"
+                            st.session_state.sl_field = f"{sl:.2f}"
+                            st.session_state.tp_field = f"{tp:.2f}"
 
+                # Save to Supabase if we have numbers
                 if entry and sl and tp:
                     if supabase_connected:
                         try:
                             cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{entry:.2f}", 'sl': f"{sl:.2f}", 'tp': f"{tp:.2f}"}
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except: pass
-                elif top3_list:
-                    if supabase_connected:
-                        try:
-                            cache_data = {'text': reasoning, 'symbol': symbol, 'entry': f"{top3_list[0]['entry']:.2f}", 'sl': f"{top3_list[0]['sl']:.2f}", 'tp': f"{top3_list[0]['tp']:.2f}"}
-                            supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
-                        except: pass
 
+                # Show speculative setup details (if any)
                 full_text = clean_analysis(ai_text)
                 split_marker = "🚨 SPECULATIVE SETUP:"
                 if split_marker in full_text:
@@ -422,7 +400,7 @@ if uploaded_files:
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
-# --- FINAL SUMMARY BOX ---
+# --- FINAL SUMMARY BOX (ONLY ONE, GUARANTEED CLEAN) ---
 if 'summary_data' in st.session_state:
     data = st.session_state.summary_data
     direction = data['direction']
@@ -431,7 +409,6 @@ if 'summary_data' in st.session_state:
     sl = data['sl']
     tp = data['tp']
     reasoning = clean_text(data['reasoning'])
-    top3_list = data.get('top3_list', [])
 
     if direction == "BUY":
         dir_label = "BUY"; dir_color = "#00FF00"
@@ -442,49 +419,26 @@ if 'summary_data' in st.session_state:
     
     sl_color = "#FF0000"; tp_color = "#00FF00"
 
-    if top3_list:
-        setups_html = ""
-        for i, setup in enumerate(top3_list, 1):
-            desc = clean_text(setup['desc'])
-            setups_html += f"""
-            <div style="border: 1px solid #f1c40f; border-radius: 8px; padding: 10px; margin-top: 10px;">
-                <p style="color: #f9e79f; font-weight: bold; margin: 0;">Setup {i}: {desc}</p>
-                <p style="color: white; margin: 5px 0;">Entry: {setup['entry']:.2f}</p>
-                <p style="color: {sl_color}; margin: 5px 0;">Stop Loss: {setup['sl']:.2f}</p>
-                <p style="color: {tp_color}; margin: 5px 0;">Take Profit: {setup['tp']:.2f}</p>
-            </div>
-            """
-        html = f"""
-        <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
-            <div style="font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px;">📊 AI Analysis Summary</div>
-            <p><b style="color: {dir_color}; margin: 0;">Direction: {dir_label}</b></p>
-            <p><b style="color: #c084fc; margin: 0;">Symbol: {symbol}</b></p>
-            {setups_html}
-            <div style="margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;">
-                <b style="color: #f9e79f;">Reasoning / Speculative Analysis:</b>
-                <p style="color: #f9e79f;">{reasoning}</p>
-            </div>
+    entry_str = f"{entry:.2f}" if entry else "N/A"
+    sl_str = f"{sl:.2f}" if sl else "N/A"
+    tp_str = f"{tp:.2f}" if tp else "N/A"
+
+    html = f"""
+    <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
+        <div style="font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px;">📊 AI Analysis Summary</div>
+        <p><b style="color: {dir_color}; margin: 0;">Direction: {dir_label}</b></p>
+        <p><b style="color: #c084fc; margin: 0;">Symbol: {symbol}</b></p>
+        <p><b style="color: white; margin: 0;">Entry: {entry_str}</b></p>
+        <p><b style="color: {sl_color}; margin: 0;">Stop Loss: {sl_str}</b></p>
+        <p><b style="color: {tp_color}; margin: 0;">Take Profit: {tp_str}</b></p>
+        <div style="margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;">
+            <b style="color: #f9e79f;">Reasoning / Speculative Analysis:</b>
+            <p style="color: #f9e79f;">{reasoning}</p>
         </div>
-        """
-    else:
-        entry_str = f"{entry:.2f}" if entry else "N/A"
-        sl_str = f"{sl:.2f}" if sl else "N/A"
-        tp_str = f"{tp:.2f}" if tp else "N/A"
-        html = f"""
-        <div style="border: 2px solid #f1c40f; background: linear-gradient(145deg, #4e342e, #6d4c41); border-radius: 15px; padding: 20px; margin-top: 10px; box-shadow: 0 0 25px rgba(241, 196, 15, 0.4);">
-            <div style="font-size: 18px; font-weight: bold; color: #f9e79f !important; margin-bottom: 10px;">📊 AI Analysis Summary</div>
-            <p><b style="color: {dir_color}; margin: 0;">Direction: {dir_label}</b></p>
-            <p><b style="color: #c084fc; margin: 0;">Symbol: {symbol}</b></p>
-            <p><b style="color: white; margin: 0;">Entry: {entry_str}</b></p>
-            <p><b style="color: {sl_color}; margin: 0;">Stop Loss: {sl_str}</b></p>
-            <p><b style="color: {tp_color}; margin: 0;">Take Profit: {tp_str}</b></p>
-            <div style="margin-top: 15px; border-top: 1px solid #f1c40f; padding-top: 10px;">
-                <b style="color: #f9e79f;">Reasoning / Speculative Analysis:</b>
-                <p style="color: #f9e79f;">{reasoning}</p>
-            </div>
-        </div>
-        """
+    </div>
+    """
     st.markdown(html, unsafe_allow_html=True)
+    
     del st.session_state.summary_data
 
 st.divider()
