@@ -11,7 +11,7 @@ from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 
-# --- CLEAN CSS (Robust and Guaranteed) ---
+# --- STYLING ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
@@ -93,12 +93,11 @@ def safe_float(s):
     try: return float(s)
     except: return None
 
-# --- HELPERS TO KEEP HTML CLEAN ---
+# --- TEXT CLEANER (removes backticks & HTML breakers) ---
 def clean_text(text):
-    """Removes backticks and replaces HTML special chars to prevent broken boxes."""
     if not text: return ""
-    text = text.replace('`', '')  # Remove all backticks (fixes code format issue)
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')  # Prevent HTML breakage
+    text = text.replace('`', '')
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     return text
 
 def clean_analysis(text):
@@ -165,8 +164,19 @@ def parse_top3_all(text):
             s = safe_float(sl_match.group(1))
             t = safe_float(tp_match.group(1))
             if e and s and t:
-                setups.append({'desc': clean_text(item.strip()), 'entry': e, 'sl': s, 'tp': t})
-    return setups[:3]
+                # Extract label (momentum continuation or reversal) from the description
+                desc = item.strip()
+                label = "Reversal"  # default
+                if re.search(r'\[Momentum Continuation\]', desc, re.IGNORECASE):
+                    label = "Momentum Continuation"
+                elif re.search(r'\[Reversal\]', desc, re.IGNORECASE):
+                    label = "Reversal"
+                setups.append({'desc': clean_text(desc), 'label': label, 'entry': e, 'sl': s, 'tp': t})
+    # Reorder: momentum setups first, then others (preserving original order)
+    momentum = [s for s in setups if s['label'] == "Momentum Continuation"]
+    others = [s for s in setups if s['label'] != "Momentum Continuation"]
+    reordered = momentum + others
+    return reordered[:3]  # only top 3
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -226,6 +236,7 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
+        # UPDATED PROMPT WITH LABEL REQUIREMENT
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -258,6 +269,10 @@ if uploaded_files:
         **For EACH of the TOP 3 setups, you MUST provide:**
         - A brief trigger description (e.g., "Buy when price sweeps 77,300")
         - An explicit "Entry:", "Stop Loss:", and "Take Profit:" with numeric values.
+        - **CRITICAL:** At the very beginning of the description, include a label in brackets: **[Momentum Continuation]** if the setup is likely to continue the existing trend (e.g., breakout continuation), or **[Reversal]** if it's a potential reversal from the trend. 
+        Example: "[Momentum Continuation] Buy when price breaks above 78,200."
+        
+        **Important:** State clearly: "If all three occur simultaneously, it is a high-probability setup."
 
         **CRITICAL FORMAT INSTRUCTION (for the entire response):**
         Regardless of your Final Verdict (BUY, SELL, or NEUTRAL), you MUST finish your ENTIRE response with exactly these 5 lines, in this order, using the exact labels below. If your verdict is NEUTRAL, write N/A for Entry, Stop Loss, and Take Profit.
@@ -346,7 +361,7 @@ if uploaded_files:
                     'top3_list': top3_list
                 }
 
-                # Auto-fill calculator with first setup if NEUTRAL
+                # Auto-fill calculator with first setup (which is now momentum continuation if present)
                 if direction == "NEUTRAL" and top3_list:
                     st.session_state.auto_symbol = symbol
                     st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
