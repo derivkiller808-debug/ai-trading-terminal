@@ -11,23 +11,19 @@ from google import genai
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 
-# --- STYLING ---
+# --- STYLING (Only simple, safe background things) ---
 bg_url = "https://github.com/derivkiller808-debug/ai-trading-terminal/raw/main/download.png"
 st.markdown(f"""
 <style>
-    .stApp {{ background-image: url("{bg_url}"); background-size: cover; background-color: #0e1117 !important; }}
-    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; border-right: 1px solid #2d313e; }}
+    .stApp {{
+        background-image: url("{bg_url}");
+        background-size: cover;
+        background-color: #0e1117 !important;
+    }}
+    [data-testid="stSidebar"] {{ background-color: #0e1117 !important; }}
     h1, h2, h3, h4, h5, h6 {{ color: #00E5A0 !important; font-family: 'Courier New', monospace; }}
     p, li, span, label, div {{ color: #c084fc !important; }}
-    input, textarea, [data-baseweb="select"] > div {{ background-color: #1a1f2e !important; color: #ffffff !important; border-color: #c084fc !important; }}
-    .stButton>button {{ background-color: rgba(0, 200, 83, 0.5) !important; color: #000 !important; font-weight: bold; border: 1px solid rgba(0, 200, 83, 0.8) !important; border-radius: 5px; transition: all 0.2s ease; }}
-    .stButton>button:hover {{ background-color: rgba(0, 200, 83, 0.7) !important; }}
-    [data-testid="stFileUploader"] {{ background-color: #1a1f2e !important; border: 1px solid #c084fc !important; border-radius: 10px; padding: 10px; }}
-    .stProgress > div > div > div > div {{ background-color: #c084fc !important; }}
-    .stSpinner > div {{ box-shadow: 0 0 25px rgba(0, 200, 83, 0.8); border: 2px solid #00C853; border-radius: 50%; animation: pulseGlow 1.5s infinite ease-in-out; }}
-    @keyframes pulseGlow {{ 0% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} 50% {{ box-shadow: 0 0 30px rgba(0, 200, 83, 0.9); }} 100% {{ box-shadow: 0 0 10px rgba(0, 200, 83, 0.4); }} }}
     footer {{visibility: hidden;}}
-    [data-testid="stMarkdownContainer"] {{ word-break: break-word; overflow-wrap: anywhere; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -39,12 +35,15 @@ st.markdown("<p style='color: #c084fc; font-family: \"Courier New\", monospace;'
 try:
     KEYS_LIST = [k.strip() for k in st.secrets["GEMINI_API_KEYS"].split(",") if k.strip()]
     if len(KEYS_LIST) == 0: st.error("❌ No keys found! Please check Settings -> Secrets."); st.stop()
-except Exception as e: st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}"); st.stop()
+except Exception as e:
+    st.error(f"❌ Missing GEMINI_API_KEYS in Settings -> Secrets. Error: {e}")
+    st.stop()
 
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     supabase_connected = True
-except: supabase_connected = False
+except:
+    supabase_connected = False
 
 # --- COOKIE DEVICE TRACKING ---
 cookies = CookieController()
@@ -164,19 +163,17 @@ def parse_top3_all(text):
             s = safe_float(sl_match.group(1))
             t = safe_float(tp_match.group(1))
             if e and s and t:
-                # Extract label (momentum continuation or reversal) from the description
                 desc = item.strip()
-                label = "Reversal"  # default
+                label = "Reversal"
                 if re.search(r'\[Momentum Continuation\]', desc, re.IGNORECASE):
                     label = "Momentum Continuation"
                 elif re.search(r'\[Reversal\]', desc, re.IGNORECASE):
                     label = "Reversal"
                 setups.append({'desc': clean_text(desc), 'label': label, 'entry': e, 'sl': s, 'tp': t})
-    # Reorder: momentum setups first, then others (preserving original order)
     momentum = [s for s in setups if s['label'] == "Momentum Continuation"]
     others = [s for s in setups if s['label'] != "Momentum Continuation"]
     reordered = momentum + others
-    return reordered[:3]  # only top 3
+    return reordered[:3]
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -236,7 +233,6 @@ if uploaded_files:
                     st.rerun()
             except: pass
 
-        # UPDATED PROMPT WITH LABEL REQUIREMENT
         system_prompt = """
         You are a legendary, mathematically precise, and exceptionally risk-averse trading strategist with 50 years of experience.
 
@@ -361,14 +357,12 @@ if uploaded_files:
                     'top3_list': top3_list
                 }
 
-                # Auto-fill calculator with first setup (which is now momentum continuation if present)
                 if direction == "NEUTRAL" and top3_list:
                     st.session_state.auto_symbol = symbol
                     st.session_state.entry_field = f"{top3_list[0]['entry']:.2f}"
                     st.session_state.sl_field = f"{top3_list[0]['sl']:.2f}"
                     st.session_state.tp_field = f"{top3_list[0]['tp']:.2f}"
 
-                # Save to Supabase if entry exists
                 if entry and sl and tp:
                     if supabase_connected:
                         try:
@@ -382,7 +376,6 @@ if uploaded_files:
                             supabase.table('analysis_cache').upsert({'hash': image_hash, 'result': cache_data}).execute()
                         except: pass
 
-                # Show speculative setup details (if any)
                 full_text = clean_analysis(ai_text)
                 split_marker = "🚨 SPECULATIVE SETUP:"
                 if split_marker in full_text:
@@ -429,7 +422,7 @@ if uploaded_files:
         except Exception as e:
             st.error(f"❌ AI Error: {e}")
 
-# --- FINAL SUMMARY BOX (ONLY ONE, GUARANTEED CLEAN) ---
+# --- FINAL SUMMARY BOX ---
 if 'summary_data' in st.session_state:
     data = st.session_state.summary_data
     direction = data['direction']
@@ -492,8 +485,6 @@ if 'summary_data' in st.session_state:
         </div>
         """
     st.markdown(html, unsafe_allow_html=True)
-    
-    # Clear the data so it doesn't show again on refresh
     del st.session_state.summary_data
 
 st.divider()
